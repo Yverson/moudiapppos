@@ -1,0 +1,17 @@
+[package]
+name = "apppos"
+version = "0.1.0"
+description = "App POS (Tauri + Vite)"
+authors = ["you"]
+edition = "2021"
+rust-version = "1.70"
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+serde_json = "1"
+tauri = { version = "1.6", features = [] }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
