@@ -9,21 +9,22 @@ export interface LoginCredentials {
 export interface AuthResponse {
   success: boolean;
   data: {
-    token: string;
+    accessToken: string;
+    refreshToken?: string;
     user: {
       id: string;
       email: string;
       nom: string;
       prenom: string;
       role: string;
-    };
+    } | null;
     proprietaire?: {
       id: string;
-      restaurantId: string;
-      restaurantName?: string;
       email: string;
       nom: string;
       prenom: string;
+      phone?: string;
+      avatarUrl?: string;
     };
   };
 }
@@ -87,11 +88,11 @@ class AuthService {
       console.log("[AuthService] API Response (full):", response.data);
 
       if (response.data.success) {
-        const { token, proprietaire, user } = response.data.data;
+        const { accessToken, proprietaire, user } = response.data.data;
 
         // Store token
-        localStorage.setItem("authToken", token);
-        syncService.setAuthToken(token);
+        localStorage.setItem("authToken", accessToken);
+        syncService.setAuthToken(accessToken);
 
         console.log(
           "[AuthService] Token d'authentification obtenu et configuré"
@@ -199,9 +200,9 @@ class AuthService {
       const response = await this.api.post<AuthResponse>("/api/auth/refresh");
 
       if (response.data.success) {
-        const { token } = response.data.data;
-        localStorage.setItem("authToken", token);
-        syncService.setAuthToken(token);
+        const { accessToken } = response.data.data;
+        localStorage.setItem("authToken", accessToken);
+        syncService.setAuthToken(accessToken);
 
         console.log("[AuthService] Token rafraîchi avec succès");
         return true;
