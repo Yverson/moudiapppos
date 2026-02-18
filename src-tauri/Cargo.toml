@@ -10,8 +10,30 @@ rust-version = "1.70"
 tauri-build = { version = "1.5", features = [] }
 
 [dependencies]
+# Tauri core
+tauri = { version = "1.6", features = ["dialog-all", "window-all", "shell-open"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri = { version = "1.6", features = [] }
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "uuid", "chrono"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# IDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# HTTP client (for sync push/pull)
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+thiserror = "1"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
