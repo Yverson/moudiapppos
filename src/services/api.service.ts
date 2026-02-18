@@ -1,9 +1,9 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosInstance, AxiosError } from "axios";
 
 // Types
 export interface LoginRequest {
-  email: string;
-  password: string;
+  Email: string;
+  Password: string;
 }
 
 export interface MenuItem {
@@ -37,7 +37,7 @@ export interface CreateOrderRequest {
 export interface Order {
   id: string;
   order_number: string;
-  status: 'pending' | 'accepted' | 'picked_up' | 'delivered' | 'cancelled';
+  status: "pending" | "accepted" | "picked_up" | "delivered" | "cancelled";
   items: MenuItemOrder[];
   subtotal: number;
   tax: number;
@@ -55,7 +55,7 @@ export interface MenuItemOrder {
 
 export interface PaymentRequest {
   order_id: string;
-  method: 'cash' | 'card' | 'mobile_money';
+  method: "cash" | "card" | "mobile_money";
   amount: number;
 }
 
@@ -64,7 +64,7 @@ export interface PaymentResponse {
   order_id: string;
   method: string;
   amount: number;
-  status: 'pending' | 'completed' | 'failed';
+  status: "pending" | "completed" | "failed";
   transaction_id?: string;
 }
 
@@ -74,7 +74,7 @@ class ApiService {
   private baseURL: string;
 
   constructor() {
-    this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    this.baseURL = import.meta.env.VITE_API_URL || "http://localhost:5000";
     this.api = axios.create({
       baseURL: this.baseURL,
       timeout: 10000,
@@ -82,7 +82,7 @@ class ApiService {
 
     // Add auth header if token exists
     this.api.interceptors.request.use((config) => {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
@@ -92,40 +92,47 @@ class ApiService {
     // Handle responses
     this.api.interceptors.response.use(
       (response) => response,
-      (error) => this.handleError(error)
+      (error) => this.handleError(error),
     );
   }
 
   private handleError(error: AxiosError) {
     if (error.response?.status === 401) {
-      localStorage.removeItem('authToken');
-      window.location.href = '/login';
+      localStorage.removeItem("authToken");
+      window.location.href = "/login";
     }
     return Promise.reject(error);
   }
 
   // Auth
   async login(credentials: LoginRequest): Promise<{ token: string }> {
-    const response = await this.api.post('/api/auth/login', credentials);
+    const response = await this.api.post(
+      "/api/proprietaires/login",
+      credentials,
+    );
     const { token } = response.data;
-    localStorage.setItem('authToken', token);
+    localStorage.setItem("authToken", token);
     return response.data;
   }
 
   // Menu
   async getMenu(restaurantId: string): Promise<MenuItem[]> {
-    const response = await this.api.get(`/api/restaurants/${restaurantId}/menu`);
+    const response = await this.api.get(
+      `/api/restaurants/${restaurantId}/menu`,
+    );
     return response.data;
   }
 
   // Orders
   async createOrder(data: CreateOrderRequest): Promise<Order> {
-    const response = await this.api.post('/api/orders', data);
+    const response = await this.api.post("/api/orders", data);
     return response.data;
   }
 
   async getOrders(restaurantId: string): Promise<Order[]> {
-    const response = await this.api.get(`/api/restaurants/${restaurantId}/orders`);
+    const response = await this.api.get(
+      `/api/restaurants/${restaurantId}/orders`,
+    );
     return response.data;
   }
 
@@ -136,13 +143,15 @@ class ApiService {
 
   // Payments
   async processPayment(data: PaymentRequest): Promise<PaymentResponse> {
-    const response = await this.api.post('/api/payments', data);
+    const response = await this.api.post("/api/payments", data);
     return response.data;
   }
 
   // Cash Drawer
   async getCashDrawer(restaurantId: string) {
-    const response = await this.api.get(`/api/restaurants/${restaurantId}/cash-drawer`);
+    const response = await this.api.get(
+      `/api/restaurants/${restaurantId}/cash-drawer`,
+    );
     return response.data;
   }
 }

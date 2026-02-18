@@ -40,7 +40,7 @@
 - axios instance with JWT auth (from localStorage or httpOnly)
 - Base URL: MOUDI backend (localhost:5000 / prod)
 - Endpoints needed:
-  - POST /api/auth/login (for cashier/admin)
+  - POST /api/proprietaires/login (for cashier/admin)
   - GET /api/restaurants/{id}/menu
   - POST /api/orders (create order from POS)
   - PATCH /api/orders/{id} (update order status)
