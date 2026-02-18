@@ -1,5 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import OfflineIndicator from '../components/OfflineIndicator';
+import DatabaseStatus from '../components/DatabaseStatus';
 
 export default function MainLayout() {
   const { user, logout } = useAuth();
@@ -81,21 +83,49 @@ export default function MainLayout() {
           >
             Admin
           </NavLink>
+          <NavLink
+            to="/categories"
+            className={({ isActive }) =>
+              isActive
+                ? 'bg-[#30363b] text-white px-6 py-3 rounded-md text-base font-bold shadow-sm'
+                : 'text-[#a4adb6] hover:text-white hover:bg-[#30363b] px-6 py-3 rounded-md text-base font-bold transition-colors'
+            }
+          >
+            Catégories
+          </NavLink>
+          <NavLink
+            to="/menu"
+            className={({ isActive }) =>
+              isActive
+                ? 'bg-[#30363b] text-white px-6 py-3 rounded-md text-base font-bold shadow-sm'
+                : 'text-[#a4adb6] hover:text-white hover:bg-[#30363b] px-6 py-3 rounded-md text-base font-bold transition-colors'
+            }
+          >
+            Menu
+          </NavLink>
+          <NavLink
+            to="/customers"
+            className={({ isActive }) =>
+              isActive
+                ? 'bg-[#30363b] text-white px-6 py-3 rounded-md text-base font-bold shadow-sm'
+                : 'text-[#a4adb6] hover:text-white hover:bg-[#30363b] px-6 py-3 rounded-md text-base font-bold transition-colors'
+            }
+          >
+            Clients
+          </NavLink>
         </nav>
 
         <div className="flex gap-4 items-center">
-          <div className="flex items-center gap-2 bg-[#22262a] px-4 py-2 rounded-lg border border-[#30363b]">
-            <div className="bg-green-500 size-3 rounded-full animate-pulse"></div>
-            <span className="text-sm text-[#a4adb6] font-bold">Online</span>
-          </div>
+          <OfflineIndicator />
+          <DatabaseStatus />
           <div className="flex items-center gap-3">
             <span className="text-sm font-medium">{user?.name}</span>
             <button
               onClick={handleLogout}
-              className="flex items-center justify-center size-12 rounded-lg bg-[#30363b] hover:bg-[#444d55] text-white transition-colors"
-              title="Déconnexion"
+              className="text-[#92adc9] hover:text-white transition-colors"
+              title="Se déconnecter"
             >
-              <span className="material-symbols-outlined text-2xl">logout</span>
+              <span className="material-symbols-outlined">logout</span>
             </button>
           </div>
         </div>
@@ -104,6 +134,8 @@ export default function MainLayout() {
       <main className="flex-1 overflow-hidden">
         <Outlet />
       </main>
+      
+      <OfflineIndicator />
     </div>
   );
 }

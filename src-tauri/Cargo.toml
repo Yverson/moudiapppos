@@ -11,7 +11,7 @@ tauri-build = { version = "1.5", features = [] }
 
 [dependencies]
 # Tauri core
-tauri = { version = "1.6", features = ["dialog-all", "window-all", "shell-open"] }
+tauri = { version = "1.6", features = [] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

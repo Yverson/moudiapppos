@@ -84,6 +84,8 @@ class AuthService {
         Password: credentials.password,
       });
 
+      console.log("[AuthService] API Response (full):", response.data);
+
       if (response.data.success) {
         const { token, proprietaire, user } = response.data.data;
 
@@ -92,16 +94,17 @@ class AuthService {
         syncService.setAuthToken(token);
 
         console.log(
-          "[AuthService] Token d'authentification obtenu et configuré",
+          "[AuthService] Token d'authentification obtenu et configuré"
         );
 
-        // Configure restaurant info if available
-        if (proprietaire) {
-          const restaurantId = proprietaire.restaurantId;
-          const restaurantName =
-            proprietaire.restaurantName ||
-            `${proprietaire.prenom} ${proprietaire.nom}`;
+        // Configure restaurant info from .env.local
+        const restaurantId = import.meta.env.VITE_RESTAURANT_ID;
+        const restaurantName =
+          proprietaire?.restaurantName ||
+          `${proprietaire?.prenom} ${proprietaire?.nom}` ||
+          "Restaurant";
 
+        if (restaurantId) {
           syncService.setRestaurantId(restaurantId);
           syncService.setRestaurantName(restaurantName);
 
@@ -109,23 +112,37 @@ class AuthService {
           localStorage.setItem("restaurantName", restaurantName);
 
           console.log(
-            `[AuthService] Restaurant configuré: ${restaurantName} (${restaurantId})`,
+            `[AuthService] Restaurant configuré: ${restaurantName} (${restaurantId})`
+          );
+        } else {
+          console.warn(
+            "[AuthService] VITE_RESTAURANT_ID non configuré dans .env.local"
           );
         }
 
         // Return user object
-        return {
-          id: user.id,
-          email: user.email,
-          firstName: user.prenom || proprietaire?.prenom || "",
-          lastName: user.nom || proprietaire?.nom || "",
-          role: user.role || proprietaire?.role || "proprietaire",
-          restaurantId: proprietaire?.restaurantId,
-          restaurantName: proprietaire?.restaurantName,
-        };
-      }
+        // API returns proprietaire data, not a separate user object
+        if (!proprietaire) {
+          console.warn("[AuthService] No proprietaire data in response");
+          return null;
+        }
 
-      return null;
+        return {
+          id: proprietaire.id || user?.id || "unknown",
+          email: proprietaire.email || user?.email || "",
+          firstName: proprietaire.prenom || user?.prenom || "",
+          lastName: proprietaire.nom || user?.nom || "",
+          role: proprietaire.role || user?.role || "proprietaire",
+          restaurantId: proprietaire.restaurantId,
+          restaurantName: proprietaire.restaurantName,
+        };
+      } else {
+        console.warn(
+          "[AuthService] API returned success=false",
+          response.data
+        );
+        return null;
+      }
     } catch (error) {
       console.error("[AuthService] Erreur de connexion:", error);
       throw error;

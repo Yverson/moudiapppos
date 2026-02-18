@@ -13,10 +13,12 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
+    "@tauri-apps/api": "^1.6.0",
+    "axios": "^1.13.5",
+    "clsx": "^2.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.22.0",
-    "clsx": "^2.1.0"
+    "react-router-dom": "^6.22.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^1.5.14",

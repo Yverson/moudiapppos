@@ -1,4 +1,5 @@
 import React, { createContext, useReducer, useCallback, useMemo, ReactNode } from 'react';
+import apiService from '../services/api.service';
 
 // Types
 export interface OrderItem {
@@ -44,7 +45,7 @@ export interface OrderContextType {
   setTableNumber: (number: number) => void;
   setDeliveryAddress: (address: string) => void;
   setOrderNotes: (notes: string) => void;
-  placeOrder: () => Promise<void>;
+  placeOrder: () => Promise<any>;
   subtotal: number;
   discountAmount: number;
   tax: number;
@@ -215,9 +216,25 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const placeOrder = useCallback(async () => {
     if (!state.restaurantId) throw new Error('Restaurant ID not set');
     if (state.items.length === 0) throw new Error('Cart is empty');
-    // TODO: Call apiService.createOrder()
+
+    const orderData = {
+      restaurant_id: state.restaurantId,
+      customer_info: state.customerInfo,
+      items: state.items.map(item => ({
+        menu_item_id: item.id,
+        quantity: item.quantity,
+        notes: item.notes,
+      })),
+      subtotal,
+      tax,
+      total,
+      discount: discountAmount,
+    };
+
+    const order = await apiService.createOrder(orderData);
     clearCart();
-  }, [state, clearCart]);
+    return order;
+  }, [state, clearCart, subtotal, tax, total, discountAmount]);
 
   const value: OrderContextType = {
     state,

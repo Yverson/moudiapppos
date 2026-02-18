@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import SyncSettings from '../components/SyncSettings';
+
 export default function Settings() {
   return (
     <div className="flex h-full overflow-hidden">
@@ -18,6 +21,10 @@ export default function Settings() {
               <a className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#233648] text-white group transition-colors" href="#">
                 <span className="material-symbols-outlined text-[#2b8cee]">settings</span>
                 <span className="text-sm font-medium">General</span>
+              </a>
+              <a className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#92adc9] hover:bg-[#192633] hover:text-white transition-colors group" href="#sync">
+                <span className="material-symbols-outlined">sync</span>
+                <span className="text-sm font-medium">Synchronisation</span>
               </a>
               <a className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#92adc9] hover:bg-[#192633] hover:text-white transition-colors group" href="#">
                 <span className="material-symbols-outlined">print</span>
@@ -45,6 +52,10 @@ export default function Settings() {
         </header>
 
         <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-[#101922]">
+          <section id="sync" className="max-w-4xl mx-auto">
+            <SyncSettings />
+          </section>
+
           <section className="max-w-4xl mx-auto">
             <h3 className="text-white text-lg font-bold mb-4 flex items-center gap-2">
               <span className="material-symbols-outlined text-[#2b8cee]">storefront</span>

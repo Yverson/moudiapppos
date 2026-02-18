@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import apiService from '../services/api.service';
 
 export interface QueueItem {
   id: string;
@@ -64,18 +65,43 @@ export function useOfflineQueue(): UseOfflineQueueReturn {
   }, []);
 
   const syncNow = useCallback(async () => {
-    if (!isOnline) return;
+    if (!isOnline || queue.length === 0) return;
+
+    const failedItems: QueueItem[] = [];
 
     for (const item of queue) {
       try {
-        // TODO: Process each queue item based on action type
-        // Call appropriate API endpoints
-        console.log('Syncing queued item:', item);
+        switch (item.action) {
+          case 'CREATE_ORDER':
+            await apiService.createOrder(item.payload);
+            console.log('✅ Synced order:', item.id);
+            break;
+
+          case 'UPDATE_ORDER':
+            await apiService.updateOrderStatus(item.payload.orderId, item.payload.status);
+            console.log('✅ Synced order update:', item.id);
+            break;
+
+          case 'PROCESS_PAYMENT':
+            await apiService.processPayment(item.payload);
+            console.log('✅ Synced payment:', item.id);
+            break;
+
+          default:
+            console.warn('Unknown action type:', item.action);
+        }
       } catch (err) {
-        console.error('Failed to sync item:', item, err);
+        console.error('❌ Failed to sync item:', item.id, err);
+        
+        if (item.retries < 3) {
+          failedItems.push({ ...item, retries: item.retries + 1 });
+        } else {
+          console.error('⚠️ Max retries reached for item:', item.id);
+        }
       }
     }
-    setQueue([]);
+
+    setQueue(failedItems);
   }, [queue, isOnline]);
 
   const clearQueue = useCallback(() => {
