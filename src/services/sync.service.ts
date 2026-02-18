@@ -226,13 +226,29 @@ class SyncService {
         }
       }
 
-      // Note: Customers sync is not implemented as per API documentation
-      // Customers are global users in the MOUDI system, not per-restaurant
+      // Sync Customers
       if (options.customers !== false) {
-        result.details.customers.errors.push(
-          "La synchronisation des clients n'est pas disponible. " +
-            "Les clients sont gérés au niveau global du système MOUDI.",
-        );
+        try {
+          const apiCustomers = await this.fetchCustomersFromAPI(restaurantId);
+          const convertedCustomers = apiCustomers.map((customer) =>
+            this.convertCustomerFromAPI(customer),
+          );
+
+          if (options.overwrite) {
+            // Clear local customers first
+            await sqliteService.syncCustomers(convertedCustomers);
+          } else {
+            // Merge with existing
+            await sqliteService.syncCustomers(convertedCustomers);
+          }
+
+          result.details.customers.synced = convertedCustomers.length;
+        } catch (error) {
+          result.details.customers.errors.push(
+            error instanceof Error ? error.message : "Erreur inconnue",
+          );
+          result.success = false;
+        }
       }
 
       if (!result.success) {
@@ -314,13 +330,22 @@ class SyncService {
   }
 
   /**
-   * Fetch customers from API
-   * Note: Not available per restaurant in MOUDI API
+   * Fetch customers from MOUDI API
+   * Endpoint: GET /api/restaurants/{id}/customers
    */
-  private async fetchCustomersFromAPI(): Promise<any[]> {
-    // Customers are managed globally in MOUDI, not per restaurant
-    // This is a placeholder for future implementation
-    return [];
+  private async fetchCustomersFromAPI(restaurantId: string): Promise<any[]> {
+    try {
+      const response = await this.api.get(
+        `/api/restaurants/${restaurantId}/customers`,
+      );
+      return response.data?.data || response.data || [];
+    } catch (error) {
+      console.warn("Impossible de récupérer les clients de l'API:", error);
+      throw new Error(
+        "Impossible de synchroniser les clients. " +
+          "Vérifiez votre connexion et votre authentification.",
+      );
+    }
   }
 
   /**
