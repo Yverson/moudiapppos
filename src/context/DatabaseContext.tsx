@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import sqliteService from '../services/sqlite.service';
 import offlineOrderService, { Order } from '../services/offline-order.service';
 import { Category, MenuItem, Customer } from '../services/sqlite.service';
+import syncService from '../services/sync.service';
 
 interface DatabaseContextType {
   // Categories
@@ -167,6 +168,40 @@ export function DatabaseProvider({ children, restaurantId }: DatabaseProviderPro
     if (isConnected) {
       refreshAll();
     }
+  }, [isConnected, restaurantId]);
+
+  // Auto-sync on startup (fill local SQLite if empty)
+  useEffect(() => {
+    const autoSyncEnabled = String(import.meta.env.VITE_AUTO_SYNC_ON_STARTUP || 'false') === 'true';
+
+    const run = async () => {
+      if (!isConnected) return;
+
+      try {
+        const count = await syncService.getLocalDataCount();
+        const isEmpty = count.categories === 0 || count.menuItems === 0;
+
+        if (!autoSyncEnabled && !isEmpty) return;
+
+        syncService.setRestaurantId(restaurantId);
+        await syncService.syncAll({
+          categories: true,
+          menuItems: true,
+          customers: false,
+          overwrite: false,
+        });
+
+        await refreshAll();
+      } catch (error) {
+        setConnectionError(
+          error instanceof Error
+            ? error.message
+            : 'Erreur lors de la synchronisation automatique',
+        );
+      }
+    };
+
+    run();
   }, [isConnected, restaurantId]);
 
   const value: DatabaseContextType = {

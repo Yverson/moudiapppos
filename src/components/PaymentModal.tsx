@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { invoke } from '@tauri-apps/api/tauri';
 
 /**
  * Payment Method Enum
@@ -16,12 +17,18 @@ enum PaymentMethod {
  * Data sent to the API for payment processing
  */
 interface PaymentRequest {
-  orderNumber: string;
-  amount: number;
-  paymentMethod: PaymentMethod;
-  tendered?: number; // Amount given (for cash)
-  change?: number; // Change to return (for cash)
-  timestamp: string;
+  orderId: string;
+  restaurantId: string;
+  cashSessionId?: string;
+  payments: Array<{
+    method: 'cash' | 'card' | 'mobile_money';
+    amount: number;
+    tendered?: number;
+    change?: number;
+    transaction_id?: string;
+    metadata?: string;
+  }>;
+  paidAt: string;
 }
 
 /**
@@ -29,26 +36,32 @@ interface PaymentRequest {
  * Data received from the API after payment processing
  */
 interface PaymentResponse {
-  success: boolean;
-  transactionId: string;
-  orderNumber: string;
-  amount: number;
-  paymentMethod: PaymentMethod;
-  change?: number;
-  timestamp: string;
-  receiptData: {
-    items: Array<{ name: string; price: number; quantity: number }>;
-    subtotal: number;
-    tax: number;
-    total: number;
-  };
+  order_id: string;
+  total_due: number;
+  total_paid: number;
+  payment_status: string;
+  payment_method?: string;
+  payments: Array<{
+    id: string;
+    order_id: string;
+    cash_session_id?: string;
+    method: string;
+    amount: number;
+    tendered?: number;
+    change?: number;
+    status: string;
+    transaction_id?: string;
+    metadata?: string;
+    created_at: string;
+    updated_at: string;
+  }>;
 }
 
 interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   total: number;
-  orderNumber: string;
+  orderId: string;
   onPaymentSuccess?: (receipt: PaymentResponse) => void;
 }
 
@@ -56,23 +69,29 @@ export default function PaymentModal({
   isOpen,
   onClose,
   total,
-  orderNumber,
+  orderId,
   onPaymentSuccess,
 }: PaymentModalProps) {
   const [amount, setAmount] = useState('0.00');
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(PaymentMethod.CASH);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [splitAmounts, setSplitAmounts] = useState({ amount1: '', amount2: '' });
+  const [splitAmounts, setSplitAmounts] = useState({ method1: PaymentMethod.CASH as PaymentMethod, amount1: '', method2: PaymentMethod.CARD as PaymentMethod, amount2: '' });
+
+  const restaurantId = useMemo(() => localStorage.getItem('restaurantId') || 'demo-restaurant', []);
 
   // Calculate values
   const tendered = parseFloat(amount) || 0;
   const change = tendered - total;
   const isValidAmount = selectedMethod === PaymentMethod.CASH ? tendered >= total : amount !== '0.00';
-  const canProceed = selectedMethod === PaymentMethod.SPLIT
-    ? splitAmounts.amount1 && splitAmounts.amount2 &&
-      (parseFloat(splitAmounts.amount1) + parseFloat(splitAmounts.amount2) >= total)
-    : isValidAmount;
+
+  const splitTotal =
+    (parseFloat(splitAmounts.amount1 || '0') || 0) + (parseFloat(splitAmounts.amount2 || '0') || 0);
+
+  const canProceed =
+    selectedMethod === PaymentMethod.SPLIT
+      ? !!splitAmounts.amount1 && !!splitAmounts.amount2 && splitTotal >= total
+      : isValidAmount;
 
   // Reset message after 5 seconds
   useEffect(() => {
@@ -134,6 +153,8 @@ export default function PaymentModal({
       setLoading(true);
       setMessage(null);
 
+      const paidAt = new Date().toISOString();
+
       // Validate amount for cash payment
       if (selectedMethod === PaymentMethod.CASH && tendered < total) {
         setMessage({
@@ -144,39 +165,106 @@ export default function PaymentModal({
         return;
       }
 
-      // Prepare payment request
-      const paymentRequest: PaymentRequest = {
-        orderNumber,
-        amount: selectedMethod === PaymentMethod.SPLIT
-          ? parseFloat(splitAmounts.amount1) + parseFloat(splitAmounts.amount2)
-          : tendered,
-        paymentMethod: selectedMethod,
-        ...(selectedMethod === PaymentMethod.CASH && {
-          tendered,
-          change: change > 0 ? change : 0,
-        }),
-        timestamp: new Date().toISOString(),
-      };
+      if (selectedMethod === PaymentMethod.SPLIT) {
+        const a1 = parseFloat(splitAmounts.amount1 || '0') || 0;
+        const a2 = parseFloat(splitAmounts.amount2 || '0') || 0;
 
-      // Make API call
-      const response = await fetch('/api/payments', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(paymentRequest),
-      });
+        if (a1 <= 0 || a2 <= 0) {
+          setMessage({
+            type: 'error',
+            text: 'Split payment amounts must be greater than 0.',
+          });
+          setLoading(false);
+          return;
+        }
 
-      if (!response.ok) {
-        throw new Error(`Payment failed: ${response.statusText}`);
+        if (a1 + a2 + 0.000001 < total) {
+          setMessage({
+            type: 'error',
+            text: `Total split payment must cover at least $${total.toFixed(2)}`,
+          });
+          setLoading(false);
+          return;
+        }
       }
 
-      const data: PaymentResponse = await response.json();
+      const methodToDbMethod = (m: PaymentMethod): 'cash' | 'card' | 'mobile_money' => {
+        switch (m) {
+          case PaymentMethod.CASH:
+            return 'cash';
+          case PaymentMethod.CARD:
+            return 'card';
+          case PaymentMethod.MOBILE_MONEY:
+            return 'mobile_money';
+          default:
+            return 'cash';
+        }
+      };
 
-      if (data.success) {
+      // Prepare payment request
+      const paymentRequest: PaymentRequest = {
+        orderId,
+        restaurantId,
+        payments:
+          selectedMethod === PaymentMethod.SPLIT
+            ? [
+                {
+                  method: methodToDbMethod(splitAmounts.method1),
+                  amount: parseFloat(splitAmounts.amount1),
+                  ...(splitAmounts.method1 === PaymentMethod.CASH
+                    ? {
+                        tendered: parseFloat(splitAmounts.amount1),
+                        change: 0,
+                      }
+                    : {}),
+                },
+                {
+                  method: methodToDbMethod(splitAmounts.method2),
+                  amount: parseFloat(splitAmounts.amount2),
+                  ...(splitAmounts.method2 === PaymentMethod.CASH
+                    ? {
+                        tendered: parseFloat(splitAmounts.amount2),
+                        change: 0,
+                      }
+                    : {}),
+                },
+              ]
+            : [
+                {
+                  method: methodToDbMethod(selectedMethod),
+                  amount: total,
+                  ...(selectedMethod === PaymentMethod.CASH
+                    ? {
+                        tendered,
+                        change: change > 0 ? change : 0,
+                      }
+                    : {}),
+                },
+              ],
+        paidAt,
+      };
+
+      const data: PaymentResponse = await invoke('complete_order_payment', {
+        request: {
+          order_id: paymentRequest.orderId,
+          restaurant_id: paymentRequest.restaurantId,
+          cash_session_id: paymentRequest.cashSessionId ?? null,
+          payments: paymentRequest.payments.map(p => ({
+            method: p.method,
+            amount: p.amount,
+            tendered: p.tendered ?? null,
+            change: p.change ?? null,
+            transaction_id: p.transaction_id ?? null,
+            metadata: p.metadata ?? null,
+          })),
+          paid_at: paymentRequest.paidAt,
+        },
+      });
+
+      if (data.payment_status === 'paid') {
         setMessage({
           type: 'success',
-          text: `Payment successful! Transaction ID: ${data.transactionId}`,
+          text: `Payment successful! Paid $${data.total_paid.toFixed(2)}`,
         });
 
         // Call success callback if provided
@@ -188,7 +276,7 @@ export default function PaymentModal({
         setTimeout(() => {
           onClose();
           setAmount('0.00');
-          setSplitAmounts({ amount1: '', amount2: '' });
+          setSplitAmounts({ method1: PaymentMethod.CASH, amount1: '', method2: PaymentMethod.CARD, amount2: '' });
         }, 2000);
       } else {
         throw new Error('Payment processing failed');
@@ -298,7 +386,7 @@ export default function PaymentModal({
       <button
         onClick={() => {
           setSelectedMethod(PaymentMethod.SPLIT);
-          setSplitAmounts({ amount1: '', amount2: '' });
+          setSplitAmounts({ method1: PaymentMethod.CASH, amount1: '', method2: PaymentMethod.CARD, amount2: '' });
         }}
         className={`flex items-center p-5 rounded-xl border-2 transition-all w-full ${
           selectedMethod === PaymentMethod.SPLIT
@@ -386,7 +474,7 @@ export default function PaymentModal({
           <div className="h-16 border-b border-slate-700/50 flex items-center justify-between px-8 bg-[#111a22]">
             <div className="flex items-center gap-3">
               <span className="material-symbols-outlined text-slate-400">receipt_long</span>
-              <h1 className="text-lg font-semibold text-slate-200">Payment: Order #{orderNumber}</h1>
+              <h1 className="text-lg font-semibold text-slate-200">Payment: Order #{orderId}</h1>
             </div>
             <button
               onClick={onClose}
@@ -439,8 +527,19 @@ export default function PaymentModal({
                   <p className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-2">Split Payment</p>
                   <div className="bg-black/40 rounded-xl p-4 border border-slate-700/50">
                     <p className="text-slate-400 text-xs mb-2">Method 1 Amount</p>
+                    <select
+                      title="Méthode de paiement 1"
+                      value={splitAmounts.method1}
+                      onChange={e => setSplitAmounts({ ...splitAmounts, method1: e.target.value as PaymentMethod })}
+                      className="w-full mb-3 bg-[#233342] text-white rounded-lg px-3 py-2 border border-slate-700"
+                    >
+                      <option value={PaymentMethod.CASH}>Cash</option>
+                      <option value={PaymentMethod.CARD}>Credit Card</option>
+                      <option value={PaymentMethod.MOBILE_MONEY}>Mobile Money</option>
+                    </select>
                     <input
                       type="number"
+                      title="Montant paiement 1"
                       placeholder="0.00"
                       value={splitAmounts.amount1}
                       onChange={e => setSplitAmounts({ ...splitAmounts, amount1: e.target.value })}
@@ -449,8 +548,19 @@ export default function PaymentModal({
                   </div>
                   <div className="bg-black/40 rounded-xl p-4 border border-slate-700/50">
                     <p className="text-slate-400 text-xs mb-2">Method 2 Amount</p>
+                    <select
+                      title="Méthode de paiement 2"
+                      value={splitAmounts.method2}
+                      onChange={e => setSplitAmounts({ ...splitAmounts, method2: e.target.value as PaymentMethod })}
+                      className="w-full mb-3 bg-[#233342] text-white rounded-lg px-3 py-2 border border-slate-700"
+                    >
+                      <option value={PaymentMethod.CASH}>Cash</option>
+                      <option value={PaymentMethod.CARD}>Credit Card</option>
+                      <option value={PaymentMethod.MOBILE_MONEY}>Mobile Money</option>
+                    </select>
                     <input
                       type="number"
+                      title="Montant paiement 2"
                       placeholder="0.00"
                       value={splitAmounts.amount2}
                       onChange={e => setSplitAmounts({ ...splitAmounts, amount2: e.target.value })}
@@ -460,7 +570,7 @@ export default function PaymentModal({
                   <div className="bg-black/40 rounded-xl p-4 border border-slate-700/50 mt-4">
                     <p className="text-slate-400 text-xs mb-2">Total Payment</p>
                     <p className="text-3xl font-mono text-white">
-                      ${(parseFloat(splitAmounts.amount1 || '0') + parseFloat(splitAmounts.amount2 || '0')).toFixed(2)}
+                      ${splitTotal.toFixed(2)}
                     </p>
                   </div>
                 </div>
@@ -508,7 +618,7 @@ export default function PaymentModal({
                   </span>
                   <span className="text-2xl font-bold text-white">
                     ${selectedMethod === PaymentMethod.SPLIT
-                      ? (parseFloat(splitAmounts.amount1 || '0') + parseFloat(splitAmounts.amount2 || '0')).toFixed(2)
+                      ? splitTotal.toFixed(2)
                       : tendered.toFixed(2)}
                   </span>
                 </div>

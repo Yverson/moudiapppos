@@ -9,6 +9,7 @@ export interface SyncResult {
     categories: { synced: number; errors: string[] };
     menuItems: { synced: number; errors: string[] };
     customers: { synced: number; errors: string[] };
+    livreurs: { synced: number; errors: string[] };
   };
   timestamp: string;
 }
@@ -17,6 +18,7 @@ export interface SyncOptions {
   categories?: boolean;
   menuItems?: boolean;
   customers?: boolean;
+  livreurs?: boolean;
   overwrite?: boolean; // If true, will overwrite local data with API data
 }
 
@@ -162,6 +164,7 @@ class SyncService {
         categories: { synced: 0, errors: [] },
         menuItems: { synced: 0, errors: [] },
         customers: { synced: 0, errors: [] },
+        livreurs: { synced: 0, errors: [] },
       },
       timestamp: new Date().toISOString(),
     };
@@ -251,6 +254,37 @@ class SyncService {
         }
       }
 
+      // Sync Livreurs
+      if (options.livreurs !== false) {
+        try {
+          console.log('[Sync] Récupération des livreurs depuis API...');
+          const apiLivreurs = await this.fetchLivreursFromAPI(restaurantId);
+          console.log(`[Sync] ${apiLivreurs.length} livreurs récupérés depuis API`);
+          
+          // Sync to SQLite via Tauri
+          for (const livreur of apiLivreurs) {
+            console.log('[Sync] Traitement livreur:', livreur.id || livreur.Id, livreur.nom || livreur.Nom);
+            const convertedLivreur = this.convertLivreurFromAPI(livreur, restaurantId);
+            console.log('[Sync] Livreur converti:', convertedLivreur);
+            try {
+              await sqliteService.upsertLivreur(convertedLivreur);
+              console.log('[Sync] Livreur sauvegardé avec succès');
+            } catch (syncError) {
+              console.error('[Sync] Erreur sauvegarde livreur:', syncError);
+              throw syncError;
+            }
+          }
+
+          result.details.livreurs.synced = apiLivreurs.length;
+        } catch (error) {
+          console.error('[Sync] Erreur synchronisation livreurs:', error);
+          result.details.livreurs.errors.push(
+            error instanceof Error ? error.message : "Erreur inconnue",
+          );
+          result.success = false;
+        }
+      }
+
       if (!result.success) {
         result.message = "Synchronisation terminée avec des erreurs";
       }
@@ -331,12 +365,12 @@ class SyncService {
 
   /**
    * Fetch customers from MOUDI API
-   * Endpoint: GET /api/restaurants/{id}/customers
+   * Endpoint: GET /api/restaurants/{id}/clients
    */
   private async fetchCustomersFromAPI(restaurantId: string): Promise<any[]> {
     try {
       const response = await this.api.get(
-        `/api/restaurants/${restaurantId}/customers`,
+        `/api/restaurants/${restaurantId}/clients`,
       );
       return response.data?.data || response.data || [];
     } catch (error) {
@@ -464,6 +498,46 @@ class SyncService {
     };
   }
 
+  /**
+   * Fetch livreurs from MOUDI API
+   * Endpoint: GET /api/restaurants/{id}/livreurs
+   */
+  private async fetchLivreursFromAPI(restaurantId: string): Promise<any[]> {
+    try {
+      const response = await this.api.get(
+        `/api/restaurants/${restaurantId}/livreurs`,
+      );
+      return response.data?.data || response.data || [];
+    } catch (error) {
+      console.warn("Impossible de récupérer les livreurs de l'API:", error);
+      throw new Error(
+        "Impossible de synchroniser les livreurs. " +
+          "Vérifiez votre connexion et votre authentification.",
+      );
+    }
+  }
+
+  /**
+   * Convert API livreur format to SQLite format
+   */
+  private convertLivreurFromAPI(apiLivreur: any, restaurantId: string): any {
+    // Convertir statut en active (actif = true, autres = false)
+    const statut = apiLivreur.statut || apiLivreur.Statut || '';
+    const isActive = statut === 'actif' || statut === 'ACTIF' || apiLivreur.actif === true || apiLivreur.active === true;
+    
+    return {
+      id: apiLivreur.id || apiLivreur.Id || `livreur-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      restaurant_id: restaurantId,
+      nom: apiLivreur.nom || apiLivreur.Nom || apiLivreur.name || apiLivreur.Name || "Sans nom",
+      prenom: apiLivreur.prenom || apiLivreur.Prenom || apiLivreur.firstName || apiLivreur.FirstName || "",
+      telephone: apiLivreur.telephone || apiLivreur.Telephone || apiLivreur.phone || apiLivreur.Phone || undefined,
+      email: apiLivreur.email || apiLivreur.Email || undefined,
+      active: isActive,
+      created_at: apiLivreur.dateInscription || apiLivreur.DateInscription || apiLivreur.created_at || apiLivreur.CreatedAt || new Date().toISOString(),
+      updated_at: apiLivreur.dateModification || apiLivreur.DateModification || apiLivreur.updated_at || apiLivreur.UpdatedAt || new Date().toISOString(),
+    };
+  }
+
   // Method to check if local data needs sync
   async needsSync(): Promise<{ needs: boolean; reason: string }> {
     try {
@@ -503,21 +577,25 @@ class SyncService {
     categories: number;
     menuItems: number;
     customers: number;
+    livreurs: number;
   }> {
     try {
-      const [categories, menuItems, customers] = await Promise.all([
+      const restaurantId = this.getRestaurantId() || 'demo-restaurant';
+      const [categories, menuItems, customers, livreurs] = await Promise.all([
         sqliteService.getCategories(),
         sqliteService.getMenuItems(),
         sqliteService.getCustomers(),
+        sqliteService.getLivreurs(restaurantId),
       ]);
 
       return {
         categories: categories.length,
         menuItems: menuItems.length,
         customers: customers.length,
+        livreurs: livreurs.length,
       };
     } catch (error) {
-      return { categories: 0, menuItems: 0, customers: 0 };
+      return { categories: 0, menuItems: 0, customers: 0, livreurs: 0 };
     }
   }
 }

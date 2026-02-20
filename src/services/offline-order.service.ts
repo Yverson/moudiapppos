@@ -61,6 +61,10 @@ class OfflineOrderService {
     return await invoke('create_order_offline', { order });
   }
 
+  async updateOrderOffline(order: Order): Promise<Order> {
+    return await invoke('update_order_offline', { order });
+  }
+
   async getOrders(restaurantId: string, status?: string): Promise<Order[]> {
     return await invoke('get_orders', { restaurantId, status });
   }
@@ -100,7 +104,7 @@ class OfflineOrderService {
     return {
       id: orderId,
       restaurant_id: orderData.restaurantId,
-      order_number: null, // Will be assigned by API
+      order_number: undefined, // Will be assigned by API
       customer_id: orderData.customerId,
       status: 'pending_local',
       subtotal: orderData.subtotal,
@@ -113,9 +117,9 @@ class OfflineOrderService {
       notes: orderData.notes,
       created_at: now,
       updated_at: now,
-      synced_at: null,
+      synced_at: undefined,
       sync_status: 'pending',
-      sync_error: null,
+      sync_error: undefined,
     };
   }
 
@@ -131,9 +135,9 @@ class OfflineOrderService {
       data: JSON.stringify(data),
       retries: 0,
       max_retries: 5,
-      last_attempt: null,
+      last_attempt: undefined,
       status: 'pending',
-      error_message: null,
+      error_message: undefined,
       created_at: now,
       updated_at: now,
     };

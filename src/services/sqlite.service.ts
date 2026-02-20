@@ -46,6 +46,18 @@ export interface Customer {
   updated_at: string;
 }
 
+export interface Livreur {
+  id: string;
+  restaurant_id: string;
+  nom: string;
+  prenom: string;
+  telephone?: string;
+  email?: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SyncStatus {
   [tableName: string]: string | null;
 }
@@ -76,6 +88,19 @@ class SQLiteService {
 
   async syncCustomers(customers: Customer[]): Promise<Customer[]> {
     return await invoke('sync_customers', { customers });
+  }
+
+  // Livreurs
+  async getLivreurs(restaurantId: string): Promise<Livreur[]> {
+    return await invoke('get_livreurs', { restaurantId, activeOnly: false });
+  }
+
+  async syncLivreur(livreur: Livreur): Promise<Livreur> {
+    return await invoke('create_livreur', { livreur });
+  }
+
+  async upsertLivreur(livreur: Livreur): Promise<Livreur> {
+    return await invoke('upsert_livreur', { livreur });
   }
 
   // Sync Status

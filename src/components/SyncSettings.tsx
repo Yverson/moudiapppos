@@ -3,13 +3,14 @@ import syncService, { SyncResult, SyncOptions } from '../services/sync.service';
 
 export default function SyncSettings() {
   const [syncStatus, setSyncStatus] = useState<any>({});
-  const [localCount, setLocalCount] = useState({ categories: 0, menuItems: 0, customers: 0 });
+  const [localCount, setLocalCount] = useState({ categories: 0, menuItems: 0, customers: 0, livreurs: 0 });
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncOptions, setSyncOptions] = useState<SyncOptions>({
     categories: true,
     menuItems: true,
     customers: true,
+    livreurs: true,
     overwrite: false,
   });
 
@@ -44,7 +45,7 @@ export default function SyncSettings() {
       setSyncResult({
         success: false,
         message: error instanceof Error ? error.message : 'Erreur de synchronisation',
-        details: { categories: { synced: 0, errors: [] }, menuItems: { synced: 0, errors: [] }, customers: { synced: 0, errors: [] } },
+        details: { categories: { synced: 0, errors: [] }, menuItems: { synced: 0, errors: [] }, customers: { synced: 0, errors: [] }, livreurs: { synced: 0, errors: [] } },
         timestamp: new Date().toISOString(),
       });
     } finally {
@@ -66,7 +67,7 @@ export default function SyncSettings() {
           Statut de Synchronisation
         </h3>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-[#233648] rounded-lg p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-slate-400 text-sm">Catégories</span>
@@ -96,6 +97,16 @@ export default function SyncSettings() {
               Dernière sync: {formatDate(syncStatus.customers)}
             </div>
           </div>
+
+          <div className="bg-[#233648] rounded-lg p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-slate-400 text-sm">Livreurs</span>
+              <span className="text-emerald-400 text-sm font-medium">{localCount.livreurs}</span>
+            </div>
+            <div className="text-xs text-slate-500">
+              Dernière sync: {formatDate(syncStatus.livreurs)}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -114,6 +125,7 @@ export default function SyncSettings() {
             </div>
             <input
               type="checkbox"
+              title="Synchroniser les catégories"
               checked={syncOptions.categories}
               onChange={(e) => setSyncOptions({ ...syncOptions, categories: e.target.checked })}
               className="w-4 h-4 text-blue-600 bg-[#233648] border-[#30363b] rounded focus:ring-blue-500"
@@ -127,6 +139,7 @@ export default function SyncSettings() {
             </div>
             <input
               type="checkbox"
+              title="Synchroniser les articles"
               checked={syncOptions.menuItems}
               onChange={(e) => setSyncOptions({ ...syncOptions, menuItems: e.target.checked })}
               className="w-4 h-4 text-blue-600 bg-[#233648] border-[#30363b] rounded focus:ring-blue-500"
@@ -140,8 +153,23 @@ export default function SyncSettings() {
             </div>
             <input
               type="checkbox"
+              title="Synchroniser les clients"
               checked={syncOptions.customers}
               onChange={(e) => setSyncOptions({ ...syncOptions, customers: e.target.checked })}
+              className="w-4 h-4 text-blue-600 bg-[#233648] border-[#30363b] rounded focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-white font-medium">Synchroniser les livreurs</label>
+              <p className="text-slate-400 text-sm">Importer les livreurs depuis l'API</p>
+            </div>
+            <input
+              type="checkbox"
+              title="Synchroniser les livreurs"
+              checked={syncOptions.livreurs}
+              onChange={(e) => setSyncOptions({ ...syncOptions, livreurs: e.target.checked })}
               className="w-4 h-4 text-blue-600 bg-[#233648] border-[#30363b] rounded focus:ring-blue-500"
             />
           </div>
@@ -153,6 +181,7 @@ export default function SyncSettings() {
             </div>
             <input
               type="checkbox"
+              title="Écraser les données locales"
               checked={syncOptions.overwrite}
               onChange={(e) => setSyncOptions({ ...syncOptions, overwrite: e.target.checked })}
               className="w-4 h-4 text-blue-600 bg-[#233648] border-[#30363b] rounded focus:ring-blue-500"
@@ -219,6 +248,10 @@ export default function SyncSettings() {
               <span className="text-slate-400">Clients synchronisés:</span>
               <span className="text-white font-medium">{syncResult.details.customers.synced}</span>
             </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Livreurs synchronisés:</span>
+              <span className="text-white font-medium">{syncResult.details.livreurs.synced}</span>
+            </div>
           </div>
           
           {/* Errors */}
@@ -249,6 +282,17 @@ export default function SyncSettings() {
               <p className="text-red-400 text-sm font-medium mb-2">Erreurs clients:</p>
               <ul className="text-red-300 text-xs space-y-1">
                 {syncResult.details.customers.errors.map((error, index) => (
+                  <li key={index}>• {error}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {syncResult.details.livreurs.errors.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-[#233648]">
+              <p className="text-red-400 text-sm font-medium mb-2">Erreurs livreurs:</p>
+              <ul className="text-red-300 text-xs space-y-1">
+                {syncResult.details.livreurs.errors.map((error, index) => (
                   <li key={index}>• {error}</li>
                 ))}
               </ul>

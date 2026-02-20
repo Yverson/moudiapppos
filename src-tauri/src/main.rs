@@ -24,12 +24,26 @@ async fn main() {
             database::get_sync_status,
             // Order commands
             database::create_order_offline,
+            database::update_order_offline,
             database::get_orders,
             database::get_pending_orders,
+            // Cash session commands
+            database::get_open_cash_session,
+            database::open_cash_session,
+            database::close_cash_session,
+            // Payment commands
+            database::get_order_payments,
+            database::complete_order_payment,
             // Sync queue commands
             database::add_to_sync_queue,
             database::get_pending_sync_items,
             database::sync_pending_orders,
+            // Livreurs
+            database::get_livreurs,
+            database::create_livreur,
+            database::upsert_livreur,
+            database::update_livreur,
+            database::delete_livreur,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

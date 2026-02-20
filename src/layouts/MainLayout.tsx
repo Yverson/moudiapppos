@@ -113,6 +113,16 @@ export default function MainLayout() {
           >
             Clients
           </NavLink>
+          <NavLink
+            to="/livreurs"
+            className={({ isActive }) =>
+              isActive
+                ? 'bg-[#30363b] text-white px-6 py-3 rounded-md text-base font-bold shadow-sm'
+                : 'text-[#a4adb6] hover:text-white hover:bg-[#30363b] px-6 py-3 rounded-md text-base font-bold transition-colors'
+            }
+          >
+            Livreurs
+          </NavLink>
         </nav>
 
         <div className="flex gap-4 items-center">

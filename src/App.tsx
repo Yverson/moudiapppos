@@ -17,10 +17,13 @@ import Admin from './pages/Admin';
 import CategoryManagement from './pages/CategoryManagement';
 import MenuManagement from './pages/MenuManagement';
 import CustomerManagement from './pages/CustomerManagement';
+import LivreurManagement from './pages/LivreurManagement';
 
 export default function App() {
-  // ID du restaurant par défaut - à récupérer depuis l'auth ou config
-  const restaurantId = 'restaurant-default-1';
+  const restaurantId =
+    import.meta.env.VITE_RESTAURANT_ID ||
+    localStorage.getItem('restaurantId') ||
+    'demo-restaurant';
 
   return (
     <AuthProvider>
@@ -50,6 +53,7 @@ export default function App() {
                       <Route path="categories" element={<CategoryManagement />} />
                       <Route path="menu" element={<MenuManagement />} />
                       <Route path="customers" element={<CustomerManagement />} />
+                      <Route path="livreurs" element={<LivreurManagement />} />
                     </Route>
                     <Route path="*" element={<Navigate to="/pos" replace />} />
                   </Routes>
