@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import menuService, { MenuItem, CreateMenuItemRequest } from '../services/menu.service';
+import syncService from '../services/sync.service';
 
 export interface MenuContextType {
   menuItems: MenuItem[];
@@ -22,6 +23,20 @@ export function MenuProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Auto-sync au chargement
+  React.useEffect(() => {
+    const autoSync = async () => {
+      try {
+        await syncService.syncAll({ categories: false, menuItems: true, customers: false, livreurs: false });
+        const data = await menuService.getMenuItems();
+        setMenuItems(data);
+      } catch (err) {
+        console.warn('[MenuContext] Auto-sync échouée:', err);
+      }
+    };
+    autoSync();
+  }, []);
+
   const fetchMenuItems = useCallback(async (categoryId?: string) => {
     try {
       setLoading(true);
@@ -29,7 +44,7 @@ export function MenuProvider({ children }: { children: ReactNode }) {
       const data = await menuService.getMenuItems(categoryId);
       setMenuItems(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch menu items');
+      setError(err instanceof Error ? err.message : 'Impossible de charger les articles du menu');
     } finally {
       setLoading(false);
     }
@@ -42,7 +57,7 @@ export function MenuProvider({ children }: { children: ReactNode }) {
       setMenuItems(prev => [...prev, newItem]);
       return newItem;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create menu item';
+      const errorMessage = err instanceof Error ? err.message : "Impossible de créer l'article du menu";
       setError(errorMessage);
       throw new Error(errorMessage);
     }
@@ -55,7 +70,7 @@ export function MenuProvider({ children }: { children: ReactNode }) {
       setMenuItems(prev => prev.map(item => item.id === id ? updatedItem : item));
       return updatedItem;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to update menu item';
+      const errorMessage = err instanceof Error ? err.message : "Impossible de mettre à jour l'article du menu";
       setError(errorMessage);
       throw new Error(errorMessage);
     }
@@ -67,7 +82,7 @@ export function MenuProvider({ children }: { children: ReactNode }) {
       await menuService.deleteMenuItem(id);
       setMenuItems(prev => prev.filter(item => item.id !== id));
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to delete menu item';
+      const errorMessage = err instanceof Error ? err.message : "Impossible de supprimer l'article du menu";
       setError(errorMessage);
       throw new Error(errorMessage);
     }
@@ -80,7 +95,7 @@ export function MenuProvider({ children }: { children: ReactNode }) {
       setMenuItems(prev => prev.map(item => item.id === id ? updatedItem : item));
       return updatedItem;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to toggle menu item availability';
+      const errorMessage = err instanceof Error ? err.message : "Impossible de modifier la disponibilité de l'article";
       setError(errorMessage);
       throw new Error(errorMessage);
     }
@@ -99,7 +114,7 @@ export function MenuProvider({ children }: { children: ReactNode }) {
       
       return reordered;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to reorder menu items';
+      const errorMessage = err instanceof Error ? err.message : 'Impossible de réordonner les articles du menu';
       setError(errorMessage);
       throw new Error(errorMessage);
     }
@@ -110,7 +125,7 @@ export function MenuProvider({ children }: { children: ReactNode }) {
       setError(null);
       return await menuService.getMenuItem(id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to get menu item');
+      setError(err instanceof Error ? err.message : "Impossible de récupérer l'article du menu");
       return null;
     }
   }, []);

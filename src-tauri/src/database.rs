@@ -72,6 +72,8 @@ pub struct Order {
     pub synced_at: Option<String>,
     pub sync_status: String, // 'pending', 'synced', 'error'
     pub sync_error: Option<String>,
+    pub source: Option<String>, // 'local' ou 'online'
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
@@ -107,16 +109,18 @@ pub struct SyncQueue {
 pub struct CashSession {
     pub id: String,
     pub restaurant_id: String,
-    pub opened_at: String,
-    pub opened_by: Option<String>,
-    pub opening_amount: f64,
-    pub closed_at: Option<String>,
-    pub closed_by: Option<String>,
-    pub closing_amount: Option<f64>,
-    pub status: String, // open, closed
+    pub r#type: String,
+    pub date_ouverture: String,
+    pub date_fermeture: Option<String>,
+    pub est_ouverte: bool,
+    pub ca_total: f64,
+    pub nombre_commandes: i32,
     pub notes: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub date_creation: String,
+    pub date_modification: Option<String>,
+    pub sync_status: Option<String>,
+    pub sync_error: Option<String>,
+    pub synced_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
@@ -140,6 +144,7 @@ pub struct CompleteOrderPaymentRequest {
     pub order_id: String,
     pub restaurant_id: String,
     pub cash_session_id: Option<String>,
+    pub final_status: Option<String>,
     pub payments: Vec<PaymentInput>,
     pub paid_at: String,
 }
@@ -175,6 +180,50 @@ pub struct Livreur {
     pub active: bool,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Staff {
+    pub id: String,
+    pub restaurant_id: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub email: String,
+    pub username: String,
+    pub role: String,
+    pub permissions: String, // JSON string
+    pub is_active: bool,
+    pub is_online: bool,
+    pub last_login: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct CashMovement {
+    pub id: String,
+    pub cash_session_id: String,
+    pub r#type: String, // 'in', 'out'
+    pub amount: f64,
+    pub reason: Option<String>,
+    pub category: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct SessionProduct {
+    pub nom_plat: String,
+    pub quantite: i32,
+    pub prix_unitaire_moyen: f64,
+    pub montant_total: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SessionWithProducts {
+    pub session: CashSession,
+    pub products: Vec<SessionProduct>,
+    pub total_ventes: f64,
+    pub total_articles: i32,
 }
 
 pub struct Database {
@@ -257,7 +306,8 @@ impl Database {
               updated_at = ?,
               synced_at = ?,
               sync_status = ?,
-              sync_error = ?
+              sync_error = ?,
+              session_id = ?
             WHERE id = ?
             RETURNING *
             "#
@@ -278,6 +328,7 @@ impl Database {
         .bind(&order.synced_at)
         .bind(&order.sync_status)
         .bind(&order.sync_error)
+        .bind(&order.session_id)
         .bind(&order.id)
         .fetch_one(&*self.pool)
         .await?;
@@ -449,8 +500,8 @@ impl Database {
             INSERT INTO orders 
             (id, restaurant_id, order_number, customer_id, status, subtotal, tax, total, 
              discount, items, payment_status, payment_method, notes, created_at, updated_at, 
-             synced_at, sync_status, sync_error)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             synced_at, sync_status, sync_error, source, session_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *
             "#
         )
@@ -472,6 +523,8 @@ impl Database {
         .bind(&order.synced_at)
         .bind(&order.sync_status)
         .bind(&order.sync_error)
+        .bind(&order.source)
+        .bind(&order.session_id)
         .fetch_one(&*self.pool)
         .await?;
         
@@ -598,7 +651,7 @@ impl Database {
     // Cash session
     pub async fn get_open_cash_session(&self, restaurant_id: &str) -> Result<Option<CashSession>, sqlx::Error> {
         let session = sqlx::query_as::<_, CashSession>(
-            "SELECT * FROM cash_sessions WHERE restaurant_id = ? AND status = 'open' ORDER BY opened_at DESC LIMIT 1"
+            "SELECT id, restaurant_id, type, date_ouverture, date_fermeture, est_ouverte, ca_total, nombre_commandes, notes, date_creation, date_modification, sync_status, sync_error, synced_at FROM cash_sessions WHERE restaurant_id = ? AND est_ouverte = 1 ORDER BY date_ouverture DESC LIMIT 1"
         )
         .bind(restaurant_id)
         .fetch_optional(&*self.pool)
@@ -606,27 +659,48 @@ impl Database {
         Ok(session)
     }
 
+    pub async fn get_restaurant_sessions(&self, restaurant_id: &str, ouvertes_seulement: bool) -> Result<Vec<CashSession>, sqlx::Error> {
+        let sessions = if ouvertes_seulement {
+            sqlx::query_as::<_, CashSession>(
+                "SELECT id, restaurant_id, type, date_ouverture, date_fermeture, est_ouverte, ca_total, nombre_commandes, notes, date_creation, date_modification, sync_status, sync_error, synced_at FROM cash_sessions WHERE restaurant_id = ? AND est_ouverte = 1 ORDER BY date_ouverture DESC"
+            )
+            .bind(restaurant_id)
+            .fetch_all(&*self.pool)
+            .await?
+        } else {
+            sqlx::query_as::<_, CashSession>(
+                "SELECT id, restaurant_id, type, date_ouverture, date_fermeture, est_ouverte, ca_total, nombre_commandes, notes, date_creation, date_modification, sync_status, sync_error, synced_at FROM cash_sessions WHERE restaurant_id = ? ORDER BY date_ouverture DESC"
+            )
+            .bind(restaurant_id)
+            .fetch_all(&*self.pool)
+            .await?
+        };
+        Ok(sessions)
+    }
+
     pub async fn open_cash_session(&self, session: &CashSession) -> Result<CashSession, sqlx::Error> {
         let result = sqlx::query_as::<_, CashSession>(
             r#"
             INSERT INTO cash_sessions
-            (id, restaurant_id, opened_at, opened_by, opening_amount, closed_at, closed_by, closing_amount, status, notes, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            RETURNING *
+            (id, restaurant_id, type, date_ouverture, date_fermeture, est_ouverte, ca_total, nombre_commandes, notes, date_creation, date_modification, sync_status, sync_error, synced_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id, restaurant_id, type, date_ouverture, date_fermeture, est_ouverte, ca_total, nombre_commandes, notes, date_creation, date_modification, sync_status, sync_error, synced_at
             "#
         )
         .bind(&session.id)
         .bind(&session.restaurant_id)
-        .bind(&session.opened_at)
-        .bind(&session.opened_by)
-        .bind(session.opening_amount)
-        .bind(&session.closed_at)
-        .bind(&session.closed_by)
-        .bind(&session.closing_amount)
-        .bind(&session.status)
+        .bind(&session.r#type)
+        .bind(&session.date_ouverture)
+        .bind(&session.date_fermeture)
+        .bind(session.est_ouverte)
+        .bind(session.ca_total)
+        .bind(session.nombre_commandes)
         .bind(&session.notes)
-        .bind(&session.created_at)
-        .bind(&session.updated_at)
+        .bind(&session.date_creation)
+        .bind(&session.date_modification)
+        .bind(session.sync_status.as_deref().unwrap_or("pending"))
+        .bind(&session.sync_error)
+        .bind(&session.synced_at)
         .fetch_one(&*self.pool)
         .await?;
 
@@ -636,22 +710,21 @@ impl Database {
     pub async fn close_cash_session(
         &self,
         session_id: &str,
-        closed_by: Option<&str>,
-        closing_amount: f64,
+        _closed_by: Option<&str>,
+        _closing_amount: f64,
         closed_at: &str,
         notes: Option<&str>,
     ) -> Result<CashSession, sqlx::Error> {
+        self.recalculate_session_stats(session_id).await?;
         let updated = sqlx::query_as::<_, CashSession>(
             r#"
             UPDATE cash_sessions
-            SET status = 'closed', closed_at = ?, closed_by = ?, closing_amount = ?, notes = ?, updated_at = ?
+            SET est_ouverte = 0, date_fermeture = ?, notes = COALESCE(?, notes), date_modification = ?, sync_status = 'pending'
             WHERE id = ?
-            RETURNING *
+            RETURNING id, restaurant_id, type, date_ouverture, date_fermeture, est_ouverte, ca_total, nombre_commandes, notes, date_creation, date_modification, sync_status, sync_error, synced_at
             "#
         )
         .bind(closed_at)
-        .bind(closed_by)
-        .bind(closing_amount)
         .bind(notes)
         .bind(closed_at)
         .bind(session_id)
@@ -659,6 +732,42 @@ impl Database {
         .await?;
 
         Ok(updated)
+    }
+
+    pub async fn recalculate_session_stats(&self, session_id: &str) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            UPDATE orders
+            SET session_id = ?1
+            WHERE session_id IS NULL
+              AND restaurant_id = (SELECT restaurant_id FROM cash_sessions WHERE id = ?1)
+              AND created_at >= (SELECT date_ouverture FROM cash_sessions WHERE id = ?1)
+              AND (
+                (SELECT date_fermeture FROM cash_sessions WHERE id = ?1) IS NULL
+                OR created_at <= (SELECT date_fermeture FROM cash_sessions WHERE id = ?1)
+              )
+            "#
+        )
+        .bind(session_id)
+        .execute(&*self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            UPDATE cash_sessions
+            SET
+              ca_total = COALESCE((SELECT SUM(total) FROM orders WHERE session_id = ?1 AND payment_status = 'paid'), 0),
+              nombre_commandes = COALESCE((SELECT COUNT(*) FROM orders WHERE session_id = ?1 AND payment_status = 'paid'), 0),
+              date_modification = ?2
+            WHERE id = ?1
+            "#
+        )
+        .bind(session_id)
+        .bind(Utc::now().to_rfc3339())
+        .execute(&*self.pool)
+        .await?;
+
+        Ok(())
     }
 
     // Payments
@@ -747,21 +856,46 @@ impl Database {
         } else {
             Some("split".to_string())
         };
+        let final_status = if req.final_status.as_deref() == Some("delivered") {
+            "delivered"
+        } else {
+            "pending_delivery"
+        };
 
         let now = req.paid_at.clone();
         let updated_order: Order = sqlx::query_as::<_, Order>(
             r#"
             UPDATE orders
-            SET payment_status = 'paid', payment_method = ?, updated_at = ?
+            SET status = ?, payment_status = 'paid', payment_method = ?, session_id = COALESCE(session_id, ?), updated_at = ?
             WHERE id = ?
             RETURNING *
             "#
         )
+        .bind(final_status)
         .bind(&payment_method_summary)
+        .bind(&req.cash_session_id)
         .bind(&now)
         .bind(&req.order_id)
         .fetch_one(&mut *tx)
         .await?;
+
+        if let Some(session_id) = &req.cash_session_id {
+            sqlx::query(
+                r#"
+                UPDATE cash_sessions
+                SET
+                  ca_total = COALESCE((SELECT SUM(total) FROM orders WHERE session_id = ?1 AND payment_status = 'paid'), 0),
+                  nombre_commandes = COALESCE((SELECT COUNT(*) FROM orders WHERE session_id = ?1 AND payment_status = 'paid'), 0),
+                  date_modification = ?2,
+                  sync_status = 'pending'
+                WHERE id = ?1
+                "#
+            )
+            .bind(session_id)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await?;
+        }
 
         tx.commit().await?;
 
@@ -842,7 +976,7 @@ pub async fn sync_customers(db: State<'_, Arc<Database>>, customers: Vec<Custome
 pub async fn get_sync_status(db: State<'_, Arc<Database>>) -> Result<std::collections::HashMap<String, Option<String>>, String> {
     let mut status = std::collections::HashMap::new();
     
-    let tables = ["categories", "menu_items", "customers"];
+    let tables = ["categories", "menu_items", "customers", "livreurs"];
     for table in tables {
         match db.get_last_sync_time(table).await {
             Ok(Some(dt)) => {
@@ -856,6 +990,35 @@ pub async fn get_sync_status(db: State<'_, Arc<Database>>) -> Result<std::collec
     }
     
     Ok(status)
+}
+
+#[tauri::command]
+pub async fn set_sync_status(db: State<'_, Arc<Database>>, table_name: String, last_sync: String) -> Result<(), String> {
+    sqlx::query("INSERT OR REPLACE INTO sync_status (table_name, updated_at) VALUES (?1, ?2)")
+        .bind(&table_name)
+        .bind(&last_sync)
+        .execute(&*db.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_last_local_modification(db: State<'_, Arc<Database>>, table_name: String) -> Result<Option<String>, String> {
+    let query = match table_name.as_str() {
+        "categories" => "SELECT MAX(COALESCE(updated_at, created_at)) as max_date FROM categories",
+        "menu_items" => "SELECT MAX(COALESCE(updated_at, created_at)) as max_date FROM menu_items",
+        "customers" => "SELECT MAX(COALESCE(updated_at, created_at)) as max_date FROM customers",
+        "livreurs" => "SELECT MAX(COALESCE(updated_at, created_at)) as max_date FROM livreurs",
+        _ => return Err(format!("Table non supportée: {}", table_name)),
+    };
+
+    let result: Option<(Option<String>,)> = sqlx::query_as(query)
+        .fetch_optional(&*db.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(result.and_then(|r| r.0))
 }
 
 // Order commands
@@ -884,6 +1047,11 @@ pub async fn get_pending_orders(db: State<'_, Arc<Database>>, restaurant_id: Str
 #[tauri::command]
 pub async fn get_open_cash_session(db: State<'_, Arc<Database>>, restaurant_id: String) -> Result<Option<CashSession>, String> {
     db.get_open_cash_session(&restaurant_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_restaurant_sessions(db: State<'_, Arc<Database>>, restaurant_id: String, ouvertes_seulement: bool) -> Result<Vec<CashSession>, String> {
+    db.get_restaurant_sessions(&restaurant_id, ouvertes_seulement).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -987,7 +1155,9 @@ async fn sync_order_to_api(order: &Order, api_url: &str) -> Result<(), String> {
         "payment_status": order.payment_status,
         "payment_method": order.payment_method,
         "notes": order.notes,
-        "created_at": order.created_at
+        "created_at": order.created_at,
+        "session_id": order.session_id,
+        "SessionId": order.session_id
     });
     
     // Send to API
@@ -1066,6 +1236,185 @@ impl Database {
             .await?;
         Ok(())
     }
+
+    // Cash movements
+    pub async fn add_cash_movement(&self, movement: &CashMovement) -> Result<CashMovement, sqlx::Error> {
+        let result = sqlx::query_as::<_, CashMovement>(
+            r#"
+            INSERT INTO cash_movements (id, cash_session_id, type, amount, reason, category, created_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            RETURNING *
+            "#
+        )
+        .bind(&movement.id)
+        .bind(&movement.cash_session_id)
+        .bind(&movement.r#type)
+        .bind(movement.amount)
+        .bind(&movement.reason)
+        .bind(&movement.category)
+        .bind(&movement.created_at)
+        .fetch_one(&*self.pool)
+        .await?;
+        Ok(result)
+    }
+
+    pub async fn get_cash_movements(&self, cash_session_id: &str) -> Result<Vec<CashMovement>, sqlx::Error> {
+        let movements = sqlx::query_as::<_, CashMovement>(
+            "SELECT * FROM cash_movements WHERE cash_session_id = ?1 ORDER BY created_at DESC"
+        )
+        .bind(cash_session_id)
+        .fetch_all(&*self.pool)
+        .await?;
+        Ok(movements)
+    }
+
+    pub async fn get_cash_session_by_id(&self, session_id: &str) -> Result<Option<CashSession>, sqlx::Error> {
+        let session = sqlx::query_as::<_, CashSession>(
+            "SELECT id, restaurant_id, type, date_ouverture, date_fermeture, est_ouverte, ca_total, nombre_commandes, notes, date_creation, date_modification, sync_status, sync_error, synced_at FROM cash_sessions WHERE id = ?1"
+        )
+        .bind(session_id)
+        .fetch_optional(&*self.pool)
+        .await?;
+        Ok(session)
+    }
+
+    pub async fn get_session_payments(&self, cash_session_id: &str) -> Result<Vec<Payment>, sqlx::Error> {
+        let payments = sqlx::query_as::<_, Payment>(
+            "SELECT * FROM payments WHERE cash_session_id = ?1 ORDER BY created_at ASC"
+        )
+        .bind(cash_session_id)
+        .fetch_all(&*self.pool)
+        .await?;
+        Ok(payments)
+    }
+
+    pub async fn get_session_products(&self, session_id: &str) -> Result<Option<SessionWithProducts>, sqlx::Error> {
+        self.recalculate_session_stats(session_id).await?;
+        // Récupérer la session
+        let session = sqlx::query_as::<_, CashSession>(
+            "SELECT id, restaurant_id, type, date_ouverture, date_fermeture, est_ouverte, ca_total, nombre_commandes, notes, date_creation, date_modification, sync_status, sync_error, synced_at FROM cash_sessions WHERE id = ?1"
+        )
+        .bind(session_id)
+        .fetch_optional(&*self.pool)
+        .await?;
+
+        if let Some(session) = session {
+            // Récupérer les produits vendus dans cette session
+            let products = sqlx::query_as::<_, SessionProduct>(
+                r#"
+                SELECT 
+                    mi.name as nom_plat,
+                    COUNT(oi.id) as quantite,
+                    AVG(oi.unit_price) as prix_unitaire_moyen,
+                    SUM(oi.total_price) as montant_total
+                FROM orders o
+                JOIN order_items oi ON o.id = oi.order_id
+                JOIN menu_items mi ON oi.menu_item_id = mi.id
+                WHERE o.session_id = ?1
+                  AND o.payment_status = 'paid'
+                GROUP BY mi.id, mi.name
+                ORDER BY montant_total DESC
+                "#
+            )
+            .bind(session_id)
+            .fetch_all(&*self.pool)
+            .await?;
+
+            let total_ventes: f64 = products.iter().map(|p| p.montant_total).sum();
+            let total_articles: i32 = products.iter().map(|p| p.quantite).sum();
+
+            Ok(Some(SessionWithProducts {
+                session,
+                products,
+                total_ventes,
+                total_articles,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    // Staff methods
+    pub async fn get_all_staff(&self, restaurant_id: &str) -> Result<Vec<Staff>, sqlx::Error> {
+        let staff = sqlx::query_as::<_, Staff>(
+            "SELECT * FROM staff WHERE restaurant_id = ?1 ORDER BY last_name ASC, first_name ASC"
+        )
+        .bind(restaurant_id)
+        .fetch_all(&*self.pool)
+        .await?;
+        Ok(staff)
+    }
+
+    pub async fn get_staff_by_id(&self, id: &str) -> Result<Option<Staff>, sqlx::Error> {
+        let staff = sqlx::query_as::<_, Staff>(
+            "SELECT * FROM staff WHERE id = ?1"
+        )
+        .bind(id)
+        .fetch_optional(&*self.pool)
+        .await?;
+        Ok(staff)
+    }
+
+    pub async fn create_staff(&self, staff: &Staff) -> Result<Staff, sqlx::Error> {
+        let result = sqlx::query_as::<_, Staff>(
+            r#"
+            INSERT INTO staff (id, restaurant_id, first_name, last_name, email, username, role, permissions, is_active, is_online, last_login, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+            RETURNING *
+            "#
+        )
+        .bind(&staff.id)
+        .bind(&staff.restaurant_id)
+        .bind(&staff.first_name)
+        .bind(&staff.last_name)
+        .bind(&staff.email)
+        .bind(&staff.username)
+        .bind(&staff.role)
+        .bind(&staff.permissions)
+        .bind(staff.is_active)
+        .bind(staff.is_online)
+        .bind(&staff.last_login)
+        .bind(&staff.created_at)
+        .bind(&staff.updated_at)
+        .fetch_one(&*self.pool)
+        .await?;
+        Ok(result)
+    }
+
+    pub async fn update_staff(&self, staff: &Staff) -> Result<Staff, sqlx::Error> {
+        let result = sqlx::query_as::<_, Staff>(
+            r#"
+            UPDATE staff 
+            SET first_name = ?1, last_name = ?2, email = ?3, username = ?4, role = ?5, 
+                permissions = ?6, is_active = ?7, is_online = ?8, last_login = ?9, updated_at = ?10
+            WHERE id = ?11
+            RETURNING *
+            "#
+        )
+        .bind(&staff.first_name)
+        .bind(&staff.last_name)
+        .bind(&staff.email)
+        .bind(&staff.username)
+        .bind(&staff.role)
+        .bind(&staff.permissions)
+        .bind(staff.is_active)
+        .bind(staff.is_online)
+        .bind(&staff.last_login)
+        .bind(&staff.updated_at)
+        .bind(&staff.id)
+        .fetch_one(&*self.pool)
+        .await?;
+        Ok(result)
+    }
+
+    pub async fn delete_staff(&self, id: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE staff SET is_active = 0, updated_at = ?1 WHERE id = ?2")
+            .bind(chrono::Utc::now().to_rfc3339())
+            .bind(id)
+            .execute(&*self.pool)
+            .await?;
+        Ok(())
+    }
 }
 
 // Tauri commands for Livreurs
@@ -1094,4 +1443,78 @@ pub async fn update_livreur(db: State<'_, Arc<Database>>, livreur: Livreur) -> R
 #[tauri::command]
 pub async fn delete_livreur(db: State<'_, Arc<Database>>, id: String) -> Result<(), String> {
     db.delete_livreur(&id).await.map_err(|e| e.to_string())
+}
+
+// Staff commands
+#[tauri::command]
+pub async fn get_all_staff(db: State<'_, Arc<Database>>, restaurant_id: String) -> Result<Vec<Staff>, String> {
+    db.get_all_staff(&restaurant_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_staff_by_id(db: State<'_, Arc<Database>>, id: String) -> Result<Option<Staff>, String> {
+    db.get_staff_by_id(&id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_staff(db: State<'_, Arc<Database>>, staff: Staff) -> Result<Staff, String> {
+    db.create_staff(&staff).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_staff(db: State<'_, Arc<Database>>, staff: Staff) -> Result<Staff, String> {
+    db.update_staff(&staff).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_staff(db: State<'_, Arc<Database>>, id: String) -> Result<(), String> {
+    db.delete_staff(&id).await.map_err(|e| e.to_string())
+}
+
+// Cash movement commands
+#[tauri::command]
+pub async fn add_cash_movement(db: State<'_, Arc<Database>>, movement: CashMovement) -> Result<CashMovement, String> {
+    db.add_cash_movement(&movement).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_cash_movements(db: State<'_, Arc<Database>>, cash_session_id: String) -> Result<Vec<CashMovement>, String> {
+    db.get_cash_movements(&cash_session_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_cash_session_by_id(db: State<'_, Arc<Database>>, session_id: String) -> Result<Option<CashSession>, String> {
+    db.get_cash_session_by_id(&session_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_session_payments(db: State<'_, Arc<Database>>, cash_session_id: String) -> Result<Vec<Payment>, String> {
+    db.get_session_payments(&cash_session_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_session_products(db: State<'_, Arc<Database>>, session_id: String) -> Result<Option<SessionWithProducts>, String> {
+    db.get_session_products(&session_id).await.map_err(|e| e.to_string())
+}
+
+// Clear orders commands
+#[tauri::command]
+pub async fn clear_orders(db: State<'_, Arc<Database>>, restaurant_id: String) -> Result<usize, String> {
+    let result = sqlx::query("DELETE FROM orders WHERE restaurant_id = ?")
+        .bind(&restaurant_id)
+        .execute(&*db.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    Ok(result.rows_affected() as usize)
+}
+
+#[tauri::command]
+pub async fn clear_all_orders(db: State<'_, Arc<Database>>) -> Result<usize, String> {
+    let result = sqlx::query("DELETE FROM orders")
+        .execute(&*db.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    Ok(result.rows_affected() as usize)
 }

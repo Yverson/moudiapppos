@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import livreurService, { Livreur } from '../services/livreur.service';
+import syncService from '../services/sync.service';
+import SettingsLayout from '../layouts/SettingsLayout';
+import { useActiveRestaurant } from '../services/restaurant-config';
 
 export default function LivreurManagement() {
   const [livreurs, setLivreurs] = useState<Livreur[]>([]);
@@ -7,7 +10,7 @@ export default function LivreurManagement() {
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editingLivreur, setEditingLivreur] = useState<Livreur | null>(null);
-  const [restaurantId, setRestaurantId] = useState('demo-restaurant');
+  const { id: restaurantId } = useActiveRestaurant();
 
   const [formData, setFormData] = useState({
     nom: '',
@@ -20,6 +23,9 @@ export default function LivreurManagement() {
   const loadLivreurs = useCallback(async () => {
     setLoading(true);
     try {
+      // Auto-sync depuis l'API
+      await syncService.syncAll({ categories: false, menuItems: false, customers: false, livreurs: true });
+      
       const data = await livreurService.getLivreurs(restaurantId, false);
       setLivreurs(data);
       setError(null);
@@ -97,13 +103,14 @@ export default function LivreurManagement() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <span className="material-symbols-outlined text-blue-500">local_shipping</span>
-          Gestion des Livreurs
-        </h1>
-        <button
+    <SettingsLayout
+      title="Livreurs"
+      description="Gérez vos livreurs et leur disponibilité."
+    >
+      <div className="space-y-6">
+
+        <div className="flex justify-end">
+          <button
           onClick={() => {
             setEditingLivreur(null);
             setFormData({ nom: '', prenom: '', telephone: '', email: '', active: true });
@@ -271,6 +278,7 @@ export default function LivreurManagement() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </SettingsLayout>
   );
 }

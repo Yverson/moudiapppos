@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useCustomer } from '../context/CustomerContext';
 import { Customer } from '../services/customer.service';
+import SettingsLayout from '../layouts/SettingsLayout';
+import { formatAmount } from '../utils/format';
 
 export default function CustomerManagement() {
   const { customers, loading, error, createCustomer, updateCustomer, deleteCustomer, searchCustomers } = useCustomer();
@@ -149,23 +151,28 @@ export default function CustomerManagement() {
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-[#101922] text-white">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-slate-400">Chargement...</p>
+      <SettingsLayout
+        title="Clients"
+        description="Gérez vos clients et leurs préférences."
+      >
+        <div className="flex items-center justify-center h-64 text-white">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+            <p className="text-slate-400">Chargement...</p>
+          </div>
         </div>
-      </div>
+      </SettingsLayout>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#101922] text-white">
-      <div className="max-w-[1400px] mx-auto p-6 md:p-8 space-y-8">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-3xl md:text-4xl font-black tracking-tight">Clients</h1>
-            <p className="text-slate-400 text-sm md:text-base">Gérez votre base de clients.</p>
-          </div>
+    <SettingsLayout
+      title="Clients"
+      description="Gérez vos clients et leurs préférences."
+    >
+      <div className="max-w-[1400px] mx-auto space-y-8">
+
+        <div className="flex justify-end">
           <button
             onClick={() => setShowForm(true)}
             className="flex items-center gap-2 px-5 h-10 rounded-lg bg-[#2b8cee] hover:bg-blue-600 text-white shadow-lg shadow-blue-900/20 active:scale-95 transition-all text-sm font-bold"
@@ -206,6 +213,17 @@ export default function CustomerManagement() {
         </div>
 
         {/* Customer Grid */}
+        {displayCustomers.length === 0 && !loading && (
+          <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+            <span className="material-symbols-outlined text-6xl mb-4 opacity-30">group</span>
+            <p className="text-lg font-medium">
+              {showSearchResults ? 'Aucun résultat pour cette recherche' : 'Aucun client enregistré'}
+            </p>
+            {!showSearchResults && (
+              <p className="text-sm mt-1">Créez votre premier client en cliquant sur "Nouveau Client".</p>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {displayCustomers.map((customer) => (
             <div
@@ -257,7 +275,7 @@ export default function CustomerManagement() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-400">Total dépensé:</span>
-                  <span className="font-medium text-emerald-400">{customer.total_spent.toFixed(2)} €</span>
+                  <span className="font-medium text-emerald-400">{formatAmount(customer.total_spent)}</span>
                 </div>
               </div>
 
@@ -469,6 +487,6 @@ export default function CustomerManagement() {
           </div>
         )}
       </div>
-    </div>
+    </SettingsLayout>
   );
 }

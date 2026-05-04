@@ -51,14 +51,14 @@ export class ErrorBoundary extends Component<Props, State> {
         <div className="flex items-center justify-center min-h-screen bg-red-50">
           <div className="bg-white p-8 rounded-lg shadow-lg max-w-md">
             <div className="text-red-600 text-4xl mb-4">⚠️</div>
-            <h1 className="text-2xl font-bold text-gray-800 mb-2">Something went wrong</h1>
+            <h1 className="text-2xl font-bold text-gray-800 mb-2">Une erreur est survenue</h1>
             <p className="text-gray-600 mb-4">
-              {this.state.error?.message || 'An unexpected error occurred'}
+              {this.state.error?.message || 'Une erreur inattendue est survenue'}
             </p>
 
             {import.meta.env.DEV && (
               <details className="mb-4 p-3 bg-gray-100 rounded text-sm">
-                <summary className="cursor-pointer font-mono text-xs">Details</summary>
+                <summary className="cursor-pointer font-mono text-xs">Détails</summary>
                 <pre className="mt-2 overflow-auto text-xs">{this.state.error?.stack}</pre>
               </details>
             )}
@@ -68,13 +68,13 @@ export class ErrorBoundary extends Component<Props, State> {
                 onClick={this.resetError}
                 className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
               >
-                Try Again
+                Réessayer
               </button>
               <button
                 onClick={() => (window.location.href = '/')}
                 className="flex-1 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700"
               >
-                Home
+                Accueil
               </button>
             </div>
 

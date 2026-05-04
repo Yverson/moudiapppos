@@ -1,5 +1,6 @@
 import sqliteService from "./sqlite.service";
 import type { MenuItem as SQLiteMenuItem } from "./sqlite.service";
+import bidirectionalSync from "./bidirectional-sync.service";
 
 // Types
 export interface MenuItemVariant {
@@ -48,7 +49,7 @@ class MenuService {
         .map((item) => this.convertFromSQLite(item))
         .sort((a, b) => a.order - b.order);
     } catch (error) {
-      console.error("Failed to load menu items from database:", error);
+      console.error("Impossible de charger les articles du menu depuis la base de données:", error);
       // Initialize with default menu items if database is empty
       return this.initializeDefaultMenuItems();
     }
@@ -86,6 +87,7 @@ class MenuService {
 
     const sqliteItem = this.convertToSQLite(newItem);
     const result = await sqliteService.syncMenuItems([sqliteItem]);
+    bidirectionalSync.pushMutation({ action: 'CREATE', entityType: 'menu_item', entityId: newItem.id, data: newItem });
     return this.convertFromSQLite(result[0]);
   }
 
@@ -96,7 +98,7 @@ class MenuService {
     const item = await this.getMenuItem(id);
 
     if (!item) {
-      throw new Error("Menu item not found");
+      throw new Error("Article du menu introuvable");
     }
 
     const updated: MenuItem = {
@@ -107,21 +109,22 @@ class MenuService {
 
     const sqliteItem = this.convertToSQLite(updated);
     const result = await sqliteService.syncMenuItems([sqliteItem]);
+    bidirectionalSync.pushMutation({ action: 'UPDATE', entityType: 'menu_item', entityId: id, data: updated });
     return this.convertFromSQLite(result[0]);
   }
 
   async deleteMenuItem(id: string): Promise<void> {
     const item = await this.getMenuItem(id);
     if (item) {
-      // Instead of deleting, mark as unavailable
       await this.updateMenuItem(id, { available: false });
+      bidirectionalSync.pushMutation({ action: 'DELETE', entityType: 'menu_item', entityId: id, data: { id } });
     }
   }
 
   async toggleMenuItemAvailability(id: string): Promise<MenuItem> {
     const item = await this.getMenuItem(id);
     if (!item) {
-      throw new Error("Menu item not found");
+      throw new Error("Article du menu introuvable");
     }
 
     return this.updateMenuItem(id, { available: !item.available });
@@ -134,7 +137,7 @@ class MenuService {
     const items = await this.getMenuItems(categoryId);
     const reordered = itemIds.map((id, index) => {
       const item = items.find((item) => item.id === id);
-      if (!item) throw new Error(`Menu item ${id} not found`);
+      if (!item) throw new Error(`Article du menu ${id} introuvable`);
       return {
         ...item,
         order: index + 1,
@@ -275,7 +278,7 @@ class MenuService {
       );
       await sqliteService.syncMenuItems(sqliteItems);
     } catch (error) {
-      console.error("Failed to initialize default menu items:", error);
+      console.error("Impossible d'initialiser les articles du menu par défaut:", error);
     }
 
     return defaultItems;

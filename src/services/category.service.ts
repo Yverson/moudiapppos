@@ -1,4 +1,5 @@
 import sqliteService from "./sqlite.service";
+import bidirectionalSync from "./bidirectional-sync.service";
 
 // Types
 export interface Category {
@@ -27,7 +28,7 @@ class CategoryService {
     try {
       return await sqliteService.getCategories();
     } catch (error) {
-      console.error("Failed to load categories from database:", error);
+      console.error("Impossible de charger les catégories depuis la base de données:", error);
       // Initialize with default categories if database is empty
       return this.initializeDefaultCategories();
     }
@@ -53,17 +54,18 @@ class CategoryService {
     };
 
     const result = await sqliteService.syncCategories([newCategory]);
+    bidirectionalSync.pushMutation({ action: 'CREATE', entityType: 'category', entityId: newCategory.id, data: newCategory });
     return result[0];
   }
 
   async updateCategory(
     id: string,
-    data: Partial<CreateCategoryRequest>,
+    data: Partial<Category>,
   ): Promise<Category> {
     const category = await this.getCategory(id);
 
     if (!category) {
-      throw new Error("Category not found");
+      throw new Error("Catégorie introuvable");
     }
 
     const updated: Category = {
@@ -73,16 +75,15 @@ class CategoryService {
     };
 
     const result = await sqliteService.syncCategories([updated]);
+    bidirectionalSync.pushMutation({ action: 'UPDATE', entityType: 'category', entityId: id, data: updated });
     return result[0];
   }
 
   async deleteCategory(id: string): Promise<void> {
-    // Note: The Rust backend doesn't have a user-facing delete command,
-    // but we can mark as inactive instead
     const category = await this.getCategory(id);
     if (category) {
-      category.active = false;
       await this.updateCategory(id, { active: false });
+      bidirectionalSync.pushMutation({ action: 'DELETE', entityType: 'category', entityId: id, data: { id } });
     }
   }
 
@@ -90,7 +91,7 @@ class CategoryService {
     const categories = await this.getCategories();
     const reordered = categoryIds.map((id, index) => {
       const category = categories.find((cat) => cat.id === id);
-      if (!category) throw new Error(`Category ${id} not found`);
+      if (!category) throw new Error(`Catégorie ${id} introuvable`);
       return {
         ...category,
         order: index + 1,
@@ -153,7 +154,7 @@ class CategoryService {
     try {
       await sqliteService.syncCategories(defaultCategories);
     } catch (error) {
-      console.error("Failed to initialize default categories:", error);
+      console.error("Impossible d'initialiser les catégories par défaut:", error);
     }
 
     return defaultCategories;

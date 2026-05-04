@@ -3,6 +3,8 @@ import PaymentModal from '../components/PaymentModal';
 import { useCategories, useMenuItems, useOrders } from '../hooks/useDatabase';
 import offlineOrderService, { Order as OfflineOrder } from '../services/offline-order.service';
 import livreurService, { Livreur } from '../services/livreur.service';
+import { formatAmount } from '../utils/format';
+import { useActiveRestaurant } from '../services/restaurant-config';
 
 interface OrderItem {
   id: string;
@@ -21,12 +23,10 @@ export default function POSTerminal() {
     error: menuItemsError,
   } = useMenuItems(activeCategoryId || undefined);
 
-  const restaurantId = useMemo(
-    () => localStorage.getItem('restaurantId') || import.meta.env.VITE_RESTAURANT_ID || 'demo-restaurant',
-    [],
-  );
+  const { id: restaurantId } = useActiveRestaurant();
 
   const { orders: pendingOrders, refresh: refreshPendingOrders } = useOrders('pending_local');
+  const { orders: deliveryOrders, refresh: refreshDeliveryOrders } = useOrders('pending_delivery');
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
@@ -47,11 +47,11 @@ export default function POSTerminal() {
     }
   }, [activeCategoryId, categories]);
 
-  // Charger les livreurs actifs
+  // Charger les livreurs (tous, puis filtrer les actifs pour le dropdown)
   const loadLivreurs = useCallback(async () => {
     try {
-      const data = await livreurService.getLivreurs(restaurantId, true);
-      setLivreurs(data);
+      const data = await livreurService.getLivreurs(restaurantId, false);
+      setLivreurs(data.filter(l => l.active));
     } catch (err) {
       console.error('Erreur chargement livreurs:', err);
     }
@@ -105,8 +105,9 @@ export default function POSTerminal() {
 
   const getNextOrderNumber = async (): Promise<string> => {
     try {
-      const orders = await offlineOrderService.getOrders(restaurantId, 'pending_local');
-      const maxNum = orders.reduce((max, o) => {
+      // Récupérer TOUTES les commandes pour éviter les doublons
+      const allOrders = await offlineOrderService.getOrders(restaurantId);
+      const maxNum = allOrders.reduce((max, o) => {
         const match = o.order_number?.match(/^(\d+)$/);
         if (match) {
           const num = parseInt(match[1], 10);
@@ -115,8 +116,10 @@ export default function POSTerminal() {
         return max;
       }, 0);
       return String(maxNum + 1).padStart(3, '0');
-    } catch {
-      return '001';
+    } catch (err) {
+      console.error('Erreur génération numéro de commande:', err);
+      // En cas d'erreur, utiliser un timestamp pour garantir l'unicité
+      return `T${Date.now().toString().slice(-6)}`;
     }
   };
 
@@ -241,7 +244,10 @@ export default function POSTerminal() {
       const notes = buildOrderNotes();
 
       if (!currentOrderId) {
-        const created: OfflineOrder = offlineOrderService.createOrderObject({
+        // Générer un nouveau numéro de commande unique
+        const newOrderNumber = await getNextOrderNumber();
+        
+        const created: OfflineOrder = await offlineOrderService.createOrderObject({
           restaurantId,
           items: [],
           subtotal: total,
@@ -257,10 +263,11 @@ export default function POSTerminal() {
         created.total = total;
         created.notes = notes;
         created.updated_at = now;
-        created.order_number = orderNumber; // Utiliser numéro incrémental
+        created.order_number = newOrderNumber; // Utiliser le numéro généré dynamiquement
 
         const saved = await offlineOrderService.createOrderOffline(created);
         setCurrentOrderId(saved.id);
+        setOrderNumber(newOrderNumber); // Mettre à jour l'état
         await refreshPendingOrders();
         return saved;
       }
@@ -291,10 +298,60 @@ export default function POSTerminal() {
   };
 
   const handlePayClick = async () => {
-    const saved = await saveOrder();
-    if (saved) {
-      setShowPaymentModal(true);
+    // Si une table est renseignée, enregistrer d'abord la commande
+    if (tableNumber && tableNumber.trim() !== '') {
+      const saved = await saveOrder();
+      if (saved) {
+        setShowPaymentModal(true);
+      }
+    } else {
+      // Paiement direct sans table (pour les clients qui ne s'assoient pas)
+      // Créer une commande temporaire pour permettre le paiement
+      setSaving(true);
+      try {
+        const now = new Date().toISOString();
+        const itemsJson = JSON.stringify(orderItems);
+        const notes = buildOrderNotes();
+        
+        // Générer un nouveau numéro de commande unique
+        const newOrderNumber = await getNextOrderNumber();
+        
+        const created: OfflineOrder = await offlineOrderService.createOrderObject({
+          restaurantId,
+          items: [],
+          subtotal: total,
+          tax: 0,
+          total,
+          paymentMethod: undefined,
+          notes: notes || 'Commande à emporter',
+        });
+
+        created.items = itemsJson;
+        created.subtotal = total;
+        created.tax = 0;
+        created.total = total;
+        created.notes = notes || 'Commande à emporter';
+        created.updated_at = now;
+        created.order_number = newOrderNumber;
+
+        const saved = await offlineOrderService.createOrderOffline(created);
+        setCurrentOrderId(saved.id);
+        setOrderNumber(newOrderNumber);
+        await refreshPendingOrders();
+        
+        setShowPaymentModal(true);
+      } catch (error) {
+        console.error('Erreur création commande temporaire:', error);
+        alert('Erreur lors de la création de la commande');
+      } finally {
+        setSaving(false);
+      }
     }
+  };
+
+  const refreshAllOrders = async () => {
+    await refreshPendingOrders();
+    await refreshDeliveryOrders();
   };
 
   const startNewOrder = async () => {
@@ -343,7 +400,7 @@ export default function POSTerminal() {
               <button
                 type="button"
                 title="Rafraîchir les commandes"
-                onClick={() => refreshPendingOrders()}
+                onClick={() => refreshAllOrders()}
                 className="text-[#a4adb6] hover:text-white transition-colors"
               >
                 <span className="material-symbols-outlined text-lg">refresh</span>
@@ -352,8 +409,9 @@ export default function POSTerminal() {
           </div>
 
           <div className="flex flex-col gap-2 overflow-y-auto max-h-[calc(100vh-200px)]">
+            {/* Commandes en attente de paiement */}
             {pendingOrders.length === 0 ? (
-              <div className="text-slate-500 text-sm py-2">Aucune commande</div>
+              <div className="text-slate-500 text-sm py-2">Aucune commande en attente</div>
             ) : (
               pendingOrders.map((o: any) => (
                 <button
@@ -367,9 +425,19 @@ export default function POSTerminal() {
                       : 'border-[#30363b] bg-[#22262a] hover:bg-[#30363b]'
                   }`}
                 >
-                  <div className="text-white font-bold text-sm truncate">{o.order_number ? `#${o.order_number}` : o.id.slice(0, 8)}</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-white font-bold text-sm truncate">{o.order_number ? `#${o.order_number}` : o.id.slice(0, 8)}</span>
+                    {(o.sync_status === 'pending' || o.sync_status === 'error') && (
+                      <span
+                        title="Commande locale, sera synchronisée quand internet disponible"
+                        className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
+                      >
+                        LOCAL
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-[#a4adb6] truncate">{o.notes || '—'}</div>
-                  <div className="text-xs text-emerald-400 font-bold mt-1">${Number(o.total || 0).toFixed(2)}</div>
+                  <div className="text-xs text-emerald-400 font-bold mt-1">{formatAmount(Number(o.total || 0))}</div>
                 </button>
               ))
             )}
@@ -433,7 +501,7 @@ export default function POSTerminal() {
                 />
                 <div className="relative z-20 p-4 flex justify-end">
                   <span className="bg-blue-600/90 backdrop-blur-md px-3 py-1.5 rounded-lg text-lg font-bold text-white shadow-lg">
-                    ${product.price.toFixed(2)}
+                    {formatAmount(product.price)}
                   </span>
                 </div>
                 <div className="relative z-20 p-5 mt-auto w-full">
@@ -559,7 +627,7 @@ export default function POSTerminal() {
                   </td>
                   <td className="py-3 px-4 text-right font-bold text-white text-lg">
                     <div className="flex items-center justify-end gap-3">
-                      <span>${(item.price * item.quantity).toFixed(2)}</span>
+                      <span>{formatAmount(item.price * item.quantity)}</span>
                       <button
                         type="button"
                         title="Supprimer l'article"
@@ -583,14 +651,14 @@ export default function POSTerminal() {
           <div className="flex flex-col gap-1 px-1">
             <div className="flex justify-between items-end">
               <span className="text-xl font-bold text-white">Total</span>
-              <span className="text-4xl font-bold text-white tracking-tight">${total.toFixed(2)}</span>
+              <span className="text-4xl font-bold text-white tracking-tight">{formatAmount(total)}</span>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
-              title="Enregistrer la commande"
+              title="Enregistrer la commande (Table obligatoire)"
               onClick={() => saveOrder()}
               disabled={saving || orderItems.length === 0 || !tableNumber || !!tableError}
               className={`w-full rounded-xl py-4 font-bold text-xl tracking-wide transition-all border ${
@@ -604,11 +672,11 @@ export default function POSTerminal() {
 
             <button
               type="button"
-              title="Payer la commande"
+              title="Payer directement (avec ou sans table)"
               onClick={handlePayClick}
-              disabled={saving || orderItems.length === 0 || !tableNumber || !!tableError}
+              disabled={saving || orderItems.length === 0}
               className={`w-full rounded-xl py-4 font-bold text-xl tracking-wide transition-all flex items-center justify-center gap-3 ${
-                saving || orderItems.length === 0 || !tableNumber || !!tableError
+                saving || orderItems.length === 0
                   ? 'bg-[#30363b] text-[#a4adb6] cursor-not-allowed'
                   : 'bg-green-600 hover:bg-green-500 text-white shadow-lg shadow-green-900/40 active:scale-[0.98]'
               }`}
@@ -623,16 +691,9 @@ export default function POSTerminal() {
             onClose={() => setShowPaymentModal(false)}
             total={total}
             orderId={currentOrderId || 'order-unknown'}
-            onPaymentSuccess={() => {
-              setOrderItems([]);
-              setCurrentOrderId(null);
-              setTableNumber('');
-              setCustomerName('');
-              setLivreurName('');
-              setSelectedLivreurId('');
-              setOrderNumber('001');
-              setTableError('');
-              refreshPendingOrders();
+            onPaymentSuccess={async () => {
+              await startNewOrder();
+              await refreshAllOrders();
             }}
           />
         </div>

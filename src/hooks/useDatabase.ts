@@ -116,12 +116,12 @@ export function useCreateOrder() {
   }) => {
     setIsCreating(true);
     setError(null);
-    
+
     try {
       const offlineOrderService = (await import('../services/offline-order.service')).default;
-      const order = offlineOrderService.createOrderObject(orderData);
+      const order = await offlineOrderService.createOrderObject(orderData);
       const savedOrder = await offlineOrderService.createOrderOffline(order);
-      
+
       await refreshOrders();
       return savedOrder;
     } catch (err) {

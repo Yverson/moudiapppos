@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import customerService, { Customer, CreateCustomerRequest, UpdateCustomerRequest } from '../services/customer.service';
+import syncService from '../services/sync.service';
 
 export interface CustomerContextType {
   customers: Customer[];
@@ -24,6 +25,20 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Auto-sync au chargement
+  React.useEffect(() => {
+    const autoSync = async () => {
+      try {
+        await syncService.syncAll({ categories: false, menuItems: false, customers: true, livreurs: false });
+        const data = await customerService.getCustomers();
+        setCustomers(data);
+      } catch (err) {
+        console.warn('[CustomerContext] Auto-sync échouée:', err);
+      }
+    };
+    autoSync();
+  }, []);
+
   const fetchCustomers = useCallback(async () => {
     try {
       setLoading(true);
@@ -31,7 +46,7 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
       const data = await customerService.getCustomers();
       setCustomers(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch customers');
+      setError(err instanceof Error ? err.message : 'Impossible de charger les clients');
     } finally {
       setLoading(false);
     }
@@ -44,7 +59,7 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
       setCustomers(prev => [...prev, newCustomer]);
       return newCustomer;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create customer';
+      const errorMessage = err instanceof Error ? err.message : 'Impossible de créer le client';
       setError(errorMessage);
       throw new Error(errorMessage);
     }
@@ -57,7 +72,7 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
       setCustomers(prev => prev.map(customer => customer.id === id ? updatedCustomer : customer));
       return updatedCustomer;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to update customer';
+      const errorMessage = err instanceof Error ? err.message : 'Impossible de mettre à jour le client';
       setError(errorMessage);
       throw new Error(errorMessage);
     }
@@ -69,7 +84,7 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
       await customerService.deleteCustomer(id);
       setCustomers(prev => prev.filter(customer => customer.id !== id));
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to delete customer';
+      const errorMessage = err instanceof Error ? err.message : 'Impossible de supprimer le client';
       setError(errorMessage);
       throw new Error(errorMessage);
     }
@@ -80,7 +95,7 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
       setError(null);
       return await customerService.searchCustomers(query);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to search customers');
+      setError(err instanceof Error ? err.message : 'Impossible de rechercher les clients');
       return [];
     }
   }, []);
@@ -90,7 +105,7 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
       setError(null);
       return await customerService.getCustomer(id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to get customer');
+      setError(err instanceof Error ? err.message : 'Impossible de récupérer le client');
       return null;
     }
   }, []);
@@ -102,7 +117,7 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
       setCustomers(prev => prev.map(customer => customer.id === id ? updatedCustomer : customer));
       return updatedCustomer;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to add loyalty points';
+      const errorMessage = err instanceof Error ? err.message : 'Impossible d’ajouter les points de fidélité';
       setError(errorMessage);
       throw new Error(errorMessage);
     }
@@ -115,7 +130,7 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
       setCustomers(prev => prev.map(customer => customer.id === id ? updatedCustomer : customer));
       return updatedCustomer;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to record order';
+      const errorMessage = err instanceof Error ? err.message : 'Impossible d’enregistrer la commande';
       setError(errorMessage);
       throw new Error(errorMessage);
     }
@@ -126,7 +141,7 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
       setError(null);
       return await customerService.getTopCustomers(limit);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to get top customers');
+      setError(err instanceof Error ? err.message : 'Impossible de récupérer les meilleurs clients');
       return [];
     }
   }, []);
@@ -136,7 +151,7 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
       setError(null);
       return await customerService.getVipCustomers();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to get VIP customers');
+      setError(err instanceof Error ? err.message : 'Impossible de récupérer les clients VIP');
       return [];
     }
   }, []);

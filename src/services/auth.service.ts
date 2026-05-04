@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from "axios";
 import syncService from "./sync.service";
+import { getActiveRestaurantId, setActiveRestaurant } from "./restaurant-config";
 
 export interface LoginCredentials {
   email: string;
@@ -25,6 +26,9 @@ export interface AuthResponse {
       prenom: string;
       phone?: string;
       avatarUrl?: string;
+      role?: string;
+      restaurantId?: string;
+      restaurantName?: string;
     };
   };
 }
@@ -98,19 +102,18 @@ class AuthService {
           "[AuthService] Token d'authentification obtenu et configuré"
         );
 
-        // Configure restaurant info from .env.local
-        const restaurantId = import.meta.env.VITE_RESTAURANT_ID;
+        // Configure restaurant info from the runtime selection first.
+        const restaurantId = proprietaire?.restaurantId || getActiveRestaurantId();
         const restaurantName =
           proprietaire?.restaurantName ||
+          localStorage.getItem("restaurantName") ||
           `${proprietaire?.prenom} ${proprietaire?.nom}` ||
           "Restaurant";
 
         if (restaurantId) {
           syncService.setRestaurantId(restaurantId);
           syncService.setRestaurantName(restaurantName);
-
-          localStorage.setItem("restaurantId", restaurantId);
-          localStorage.setItem("restaurantName", restaurantName);
+          setActiveRestaurant({ id: restaurantId, name: restaurantName });
 
           console.log(
             `[AuthService] Restaurant configuré: ${restaurantName} (${restaurantId})`

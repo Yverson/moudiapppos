@@ -1,4 +1,11 @@
-import { invoke } from '@tauri-apps/api/tauri';
+import { invokeOrFallback } from './platform';
+import {
+  web_get_livreurs,
+  web_create_livreur,
+  web_update_livreur,
+  web_delete_livreur,
+} from './db-web';
+import bidirectionalSync from './bidirectional-sync.service';
 
 export interface Livreur {
   id: string;
@@ -14,7 +21,7 @@ export interface Livreur {
 
 class LivreurService {
   async getLivreurs(restaurantId: string, activeOnly = false): Promise<Livreur[]> {
-    return await invoke('get_livreurs', { restaurantId, activeOnly });
+    return await invokeOrFallback('get_livreurs', { restaurantId, activeOnly }, () => web_get_livreurs(restaurantId, activeOnly));
   }
 
   async createLivreur(livreur: Omit<Livreur, 'id' | 'created_at' | 'updated_at'>): Promise<Livreur> {
@@ -28,7 +35,9 @@ class LivreurService {
       updated_at: now,
     };
     
-    return await invoke('create_livreur', { livreur: newLivreur });
+    const result = await invokeOrFallback('create_livreur', { livreur: newLivreur }, () => web_create_livreur(newLivreur));
+    bidirectionalSync.pushMutation({ action: 'CREATE', entityType: 'livreur', entityId: newLivreur.id, data: newLivreur });
+    return result;
   }
 
   async updateLivreur(livreur: Livreur): Promise<Livreur> {
@@ -36,11 +45,14 @@ class LivreurService {
       ...livreur,
       updated_at: new Date().toISOString(),
     };
-    return await invoke('update_livreur', { livreur: updated });
+    const result = await invokeOrFallback('update_livreur', { livreur: updated }, () => web_update_livreur(updated));
+    bidirectionalSync.pushMutation({ action: 'UPDATE', entityType: 'livreur', entityId: livreur.id, data: updated });
+    return result;
   }
 
   async deleteLivreur(id: string): Promise<void> {
-    return await invoke('delete_livreur', { id });
+    await invokeOrFallback('delete_livreur', { id }, () => web_delete_livreur(id));
+    bidirectionalSync.pushMutation({ action: 'DELETE', entityType: 'livreur', entityId: id, data: { id } });
   }
 
   createLivreurObject(data: {

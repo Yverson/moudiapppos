@@ -137,24 +137,6 @@ export default function Login() {
               )}
             </button>
           </form>
-
-          {/* Info Message */}
-          <div className="mt-6 p-4 bg-[#0f1621] border border-[#1e3a5f] rounded-lg text-slate-400 text-xs space-y-2">
-            <p className="text-slate-300 font-medium">ℹ️ Informations</p>
-            <ul className="space-y-1 text-slate-400">
-              <li>• Connectez-vous avec vos identifiants MOUDI</li>
-              <li>• Le token JWT sera configuré automatiquement</li>
-              <li>• Le restaurant sera chargé depuis votre profil</li>
-              <li>• Assurez-vous que VITE_API_URL est correct</li>
-            </ul>
-          </div>
-
-          {/* API Status Debug */}
-          <div className="mt-4 p-3 bg-slate-900/30 rounded-lg text-xs text-slate-500 border border-slate-700/30">
-            <p>
-              API: {import.meta.env.VITE_API_URL || "http://localhost:5000"}
-            </p>
-          </div>
         </div>
       </div>
     </div>

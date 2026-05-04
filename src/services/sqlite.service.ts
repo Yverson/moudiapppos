@@ -1,4 +1,16 @@
-import { invoke } from '@tauri-apps/api/tauri';
+import { invokeOrFallback } from './platform';
+import {
+  web_get_categories,
+  web_sync_categories,
+  web_get_menu_items,
+  web_sync_menu_items,
+  web_get_customers,
+  web_sync_customers,
+  web_get_sync_status,
+  web_get_livreurs,
+  web_create_livreur,
+  web_upsert_livreur,
+} from './db-web';
 
 // Types matching Rust structs
 export interface Category {
@@ -65,47 +77,86 @@ export interface SyncStatus {
 class SQLiteService {
   // Categories
   async getCategories(): Promise<Category[]> {
-    return await invoke('get_categories');
+    return await invokeOrFallback('get_categories', {}, () => web_get_categories());
   }
 
   async syncCategories(categories: Category[]): Promise<Category[]> {
-    return await invoke('sync_categories', { categories });
+    return await invokeOrFallback('sync_categories', { categories }, () => web_sync_categories(categories));
   }
 
   // Menu Items
   async getMenuItems(categoryId?: string): Promise<MenuItem[]> {
-    return await invoke('get_menu_items', { categoryId });
+    return await invokeOrFallback('get_menu_items', { categoryId }, () => web_get_menu_items(categoryId));
   }
 
   async syncMenuItems(items: MenuItem[]): Promise<MenuItem[]> {
-    return await invoke('sync_menu_items', { items });
+    return await invokeOrFallback('sync_menu_items', { items }, () => web_sync_menu_items(items));
   }
 
   // Customers
   async getCustomers(): Promise<Customer[]> {
-    return await invoke('get_customers');
+    return await invokeOrFallback('get_customers', {}, () => web_get_customers());
   }
 
   async syncCustomers(customers: Customer[]): Promise<Customer[]> {
-    return await invoke('sync_customers', { customers });
+    return await invokeOrFallback('sync_customers', { customers }, () => web_sync_customers(customers));
   }
 
   // Livreurs
   async getLivreurs(restaurantId: string): Promise<Livreur[]> {
-    return await invoke('get_livreurs', { restaurantId, activeOnly: false });
+    return await invokeOrFallback('get_livreurs', { restaurantId, activeOnly: false }, () => web_get_livreurs(restaurantId, false));
   }
 
   async syncLivreur(livreur: Livreur): Promise<Livreur> {
-    return await invoke('create_livreur', { livreur });
+    return await invokeOrFallback('create_livreur', { livreur }, () => web_create_livreur(livreur));
   }
 
   async upsertLivreur(livreur: Livreur): Promise<Livreur> {
-    return await invoke('upsert_livreur', { livreur });
+    return await invokeOrFallback('upsert_livreur', { livreur }, () => web_upsert_livreur(livreur));
   }
 
   // Sync Status
   async getSyncStatus(): Promise<SyncStatus> {
-    return await invoke('get_sync_status');
+    return await invokeOrFallback('get_sync_status', {}, () => web_get_sync_status());
+  }
+
+  async setSyncStatus(tableName: string, timestamp: string): Promise<void> {
+    return await invokeOrFallback(
+      'set_sync_status',
+      { tableName: tableName, lastSync: timestamp },
+      async () => {
+        const { getDb } = await import('./db-web');
+        const db = await getDb();
+        await db.put('sync_status', { table_name: tableName, last_sync: timestamp });
+      }
+    );
+  }
+
+  async getLastLocalModificationDate(tableName: string): Promise<string | null> {
+    return await invokeOrFallback(
+      'get_last_local_modification',
+      { tableName: tableName },
+      async () => {
+        const { getDb } = await import('./db-web');
+        const db = await getDb();
+        
+        // Récupérer tous les items de la table
+        const items = await db.getAll(tableName);
+        if (items.length === 0) return null;
+        
+        // Trouver la date la plus récente (created_at ou updated_at)
+        let maxDate: string | null = null;
+        for (const item of items) {
+          const dates = [item.created_at, item.updated_at, item.dateCreation, item.dateModification].filter(Boolean);
+          for (const date of dates) {
+            if (!maxDate || new Date(date) > new Date(maxDate)) {
+              maxDate = date;
+            }
+          }
+        }
+        return maxDate;
+      }
+    );
   }
 
   // Helper methods to convert between API and SQLite formats

@@ -19,7 +19,7 @@ export default function MainLayout() {
           <div className="size-10 flex items-center justify-center bg-[#577798]/20 rounded-lg text-[#577798]">
             <span className="material-symbols-outlined text-3xl">point_of_sale</span>
           </div>
-          <h2 className="text-2xl font-bold">RestoPOS</h2>
+          <h2 className="text-2xl font-bold">MOUDI'S FOOD</h2>
         </div>
 
         <nav className="flex items-center gap-2 bg-[#22262a] p-1.5 rounded-lg">
@@ -34,14 +34,34 @@ export default function MainLayout() {
             Caisse
           </NavLink>
           <NavLink
-            to="/finance"
+            to="/sessions"
             className={({ isActive }) =>
               isActive
                 ? 'bg-[#30363b] text-white px-6 py-3 rounded-md text-base font-bold shadow-sm'
                 : 'text-[#a4adb6] hover:text-white hover:bg-[#30363b] px-6 py-3 rounded-md text-base font-bold transition-colors'
             }
           >
-            Finance
+            Sessions
+          </NavLink>
+          <NavLink
+            to="/orders"
+            className={({ isActive }) =>
+              isActive
+                ? 'bg-[#30363b] text-white px-6 py-3 rounded-md text-base font-bold shadow-sm'
+                : 'text-[#a4adb6] hover:text-white hover:bg-[#30363b] px-6 py-3 rounded-md text-base font-bold transition-colors'
+            }
+          >
+            Commandes
+          </NavLink>
+          <NavLink
+            to="/orders/history"
+            className={({ isActive }) =>
+              isActive
+                ? 'bg-[#30363b] text-white px-6 py-3 rounded-md text-base font-bold shadow-sm'
+                : 'text-[#a4adb6] hover:text-white hover:bg-[#30363b] px-6 py-3 rounded-md text-base font-bold transition-colors'
+            }
+          >
+            Historique
           </NavLink>
           <NavLink
             to="/settings"
@@ -71,57 +91,7 @@ export default function MainLayout() {
                 : 'text-[#a4adb6] hover:text-white hover:bg-[#30363b] px-6 py-3 rounded-md text-base font-bold transition-colors'
             }
           >
-            Roles
-          </NavLink>
-          <NavLink
-            to="/admin"
-            className={({ isActive }) =>
-              isActive
-                ? 'bg-[#30363b] text-white px-6 py-3 rounded-md text-base font-bold shadow-sm'
-                : 'text-[#a4adb6] hover:text-white hover:bg-[#30363b] px-6 py-3 rounded-md text-base font-bold transition-colors'
-            }
-          >
-            Admin
-          </NavLink>
-          <NavLink
-            to="/categories"
-            className={({ isActive }) =>
-              isActive
-                ? 'bg-[#30363b] text-white px-6 py-3 rounded-md text-base font-bold shadow-sm'
-                : 'text-[#a4adb6] hover:text-white hover:bg-[#30363b] px-6 py-3 rounded-md text-base font-bold transition-colors'
-            }
-          >
-            Catégories
-          </NavLink>
-          <NavLink
-            to="/menu"
-            className={({ isActive }) =>
-              isActive
-                ? 'bg-[#30363b] text-white px-6 py-3 rounded-md text-base font-bold shadow-sm'
-                : 'text-[#a4adb6] hover:text-white hover:bg-[#30363b] px-6 py-3 rounded-md text-base font-bold transition-colors'
-            }
-          >
-            Menu
-          </NavLink>
-          <NavLink
-            to="/customers"
-            className={({ isActive }) =>
-              isActive
-                ? 'bg-[#30363b] text-white px-6 py-3 rounded-md text-base font-bold shadow-sm'
-                : 'text-[#a4adb6] hover:text-white hover:bg-[#30363b] px-6 py-3 rounded-md text-base font-bold transition-colors'
-            }
-          >
-            Clients
-          </NavLink>
-          <NavLink
-            to="/livreurs"
-            className={({ isActive }) =>
-              isActive
-                ? 'bg-[#30363b] text-white px-6 py-3 rounded-md text-base font-bold shadow-sm'
-                : 'text-[#a4adb6] hover:text-white hover:bg-[#30363b] px-6 py-3 rounded-md text-base font-bold transition-colors'
-            }
-          >
-            Livreurs
+            Rôles
           </NavLink>
         </nav>
 
@@ -129,7 +99,9 @@ export default function MainLayout() {
           <OfflineIndicator />
           <DatabaseStatus />
           <div className="flex items-center gap-3">
-            <span className="text-sm font-medium">{user?.name}</span>
+            <span className="text-sm font-medium">
+              {user ? `${user.firstName} ${user.lastName}`.trim() || user.email : ''}
+            </span>
             <button
               onClick={handleLogout}
               className="text-[#92adc9] hover:text-white transition-colors"
@@ -141,7 +113,7 @@ export default function MainLayout() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 overflow-auto">
         <Outlet />
       </main>
       

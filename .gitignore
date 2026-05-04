@@ -13,6 +13,9 @@ node_modules/
 /src-tauri/target/
 /src-tauri/gen/
 /src-tauri/WixTools/
+/src-tauri/*.db
+/src-tauri/*.db-shm
+/src-tauri/*.db-wal
 
 # IDE
 .vscode/

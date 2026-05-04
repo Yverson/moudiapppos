@@ -22,6 +22,8 @@ async fn main() {
             database::get_customers,
             database::sync_customers,
             database::get_sync_status,
+            database::set_sync_status,
+            database::get_last_local_modification,
             // Order commands
             database::create_order_offline,
             database::update_order_offline,
@@ -29,6 +31,7 @@ async fn main() {
             database::get_pending_orders,
             // Cash session commands
             database::get_open_cash_session,
+            database::get_restaurant_sessions,
             database::open_cash_session,
             database::close_cash_session,
             // Payment commands
@@ -44,6 +47,21 @@ async fn main() {
             database::upsert_livreur,
             database::update_livreur,
             database::delete_livreur,
+            // Cash movements
+            database::add_cash_movement,
+            database::get_cash_movements,
+            database::get_cash_session_by_id,
+            database::get_session_payments,
+            database::get_session_products,
+            // Staff
+            database::get_all_staff,
+            database::get_staff_by_id,
+            database::create_staff,
+            database::update_staff,
+            database::delete_staff,
+            // Clear orders commands
+            database::clear_orders,
+            database::clear_all_orders,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

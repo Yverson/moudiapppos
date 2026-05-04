@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { useCategories } from '../hooks/useDatabase';
 import sqliteService, { Category } from '../services/sqlite.service';
+import syncService from '../services/sync.service';
+import bidirectionalSync from '../services/bidirectional-sync.service';
+import { getActiveRestaurantId } from '../services/restaurant-config';
 
 interface CategoryContextType {
   categories: Category[];
@@ -23,6 +26,19 @@ export function CategoryProvider({ children }: { children: ReactNode }) {
   // Helper pour mettre à jour l'état local pendant les opérations
   const [localCategories, setLocalCategories] = useState<Category[]>(categories);
 
+  // Auto-sync au chargement
+  React.useEffect(() => {
+    const autoSync = async () => {
+      try {
+        await syncService.syncAll({ categories: true, menuItems: false, customers: false, livreurs: false });
+        await refreshCategories();
+      } catch (err) {
+        console.warn('[CategoryContext] Auto-sync échouée:', err);
+      }
+    };
+    autoSync();
+  }, []);
+
   React.useEffect(() => {
     if (connectionError) {
       setError(connectionError);
@@ -38,9 +54,10 @@ export function CategoryProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      const restaurantId = getActiveRestaurantId();
       const newCategory: Category = {
         id: `cat-${Date.now()}`,
-        name: data.name || 'New Category',
+        name: data.name || 'Nouvelle catégorie',
         description: data.description || '',
         color: data.color || '#CCCCCC',
         icon: data.icon || 'category',
@@ -50,11 +67,25 @@ export function CategoryProvider({ children }: { children: ReactNode }) {
         updated_at: new Date().toISOString(),
         ...data,
       };
+      
+      // Sauvegarder en local
       const savedCategory = await sqliteService.syncCategories([newCategory]);
+      
+      // Synchroniser vers le cloud (ou mettre en queue si hors ligne)
+      await bidirectionalSync.pushMutation({
+        action: 'CREATE',
+        entityType: 'category',
+        entityId: newCategory.id,
+        data: {
+          restaurantId,
+          ...newCategory
+        }
+      });
+      
       await refreshCategories();
       return savedCategory[0];
     } catch (err) {
-      setError('Failed to create category in SQLite.');
+      setError('Impossible de créer la catégorie dans SQLite.');
       throw err;
     }
   }, [categories, isConnected, refreshCategories]);
@@ -66,20 +97,35 @@ export function CategoryProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      const restaurantId = getActiveRestaurantId();
       const existingCategory = categories.find(cat => cat.id === id);
       if (!existingCategory) {
-        throw new Error('Category not found');
+        throw new Error('Catégorie introuvable');
       }
       const updatedCategory: Category = {
         ...existingCategory,
         ...data,
         updated_at: new Date().toISOString(),
       };
+      
+      // Sauvegarder en local
       const savedCategory = await sqliteService.syncCategories([updatedCategory]);
+      
+      // Synchroniser vers le cloud (ou mettre en queue si hors ligne)
+      await bidirectionalSync.pushMutation({
+        action: 'UPDATE',
+        entityType: 'category',
+        entityId: id,
+        data: {
+          restaurantId,
+          ...updatedCategory
+        }
+      });
+      
       await refreshCategories();
       return savedCategory[0];
     } catch (err) {
-      setError('Failed to update category in SQLite.');
+      setError('Impossible de mettre à jour la catégorie dans SQLite.');
       throw err;
     }
   }, [categories, isConnected, refreshCategories]);
@@ -91,14 +137,37 @@ export function CategoryProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      // Pour l'instant, on simule la suppression localement
-      // TODO: Implémenter la commande delete_category dans Rust
-      setLocalCategories((prev: Category[]) => prev.filter((cat: Category) => cat.id !== id));
+      const restaurantId = getActiveRestaurantId();
+      const existingCategory = categories.find(cat => cat.id === id);
+      if (!existingCategory) {
+        throw new Error('Catégorie introuvable');
+      }
+      
+      const updatedCategory: Category = {
+        ...existingCategory,
+        active: false,
+        updated_at: new Date().toISOString(),
+      };
+      
+      // Sauvegarder en local (marquer comme inactive)
+      await sqliteService.syncCategories([updatedCategory]);
+      
+      // Synchroniser vers le cloud (ou mettre en queue si hors ligne)
+      await bidirectionalSync.pushMutation({
+        action: 'DELETE',
+        entityType: 'category',
+        entityId: id,
+        data: {
+          restaurantId
+        }
+      });
+      
+      await refreshCategories();
     } catch (err) {
-      setError('Failed to delete category from SQLite.');
+      setError('Impossible de supprimer la catégorie dans SQLite.');
       throw err;
     }
-  }, [isConnected, setLocalCategories]);
+  }, [isConnected, categories, refreshCategories]);
 
   const reorderCategories = useCallback(async (categoryIds: string[]) => {
     if (!isConnected) {
@@ -109,14 +178,14 @@ export function CategoryProvider({ children }: { children: ReactNode }) {
     try {
       const reorderedCategories = categoryIds.map((id, index) => {
         const category = categories.find(cat => cat.id === id);
-        if (!category) throw new Error(`Category ${id} not found`);
+        if (!category) throw new Error(`Catégorie ${id} introuvable`);
         return { ...category, order: index + 1, updated_at: new Date().toISOString() };
       });
       const savedCategories = await sqliteService.syncCategories(reorderedCategories);
       await refreshCategories();
       return savedCategories;
     } catch (err) {
-      setError('Failed to reorder categories in SQLite.');
+      setError('Impossible de réordonner les catégories dans SQLite.');
       throw err;
     }
   }, [categories, isConnected, refreshCategories]);

@@ -11,7 +11,7 @@ tauri-build = { version = "1.5", features = [] }
 
 [dependencies]
 # Tauri core
-tauri = { version = "1.6", features = [] }
+tauri = { version = "1.6", features = ["dialog-all"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

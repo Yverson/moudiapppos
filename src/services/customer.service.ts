@@ -1,5 +1,6 @@
 import sqliteService from "./sqlite.service";
 import type { Customer as SQLiteCustomer } from "./sqlite.service";
+import bidirectionalSync from "./bidirectional-sync.service";
 
 // Types
 export interface CustomerAddress {
@@ -56,7 +57,7 @@ class CustomerService {
         this.convertFromSQLite(customer),
       );
     } catch (error) {
-      console.error("Failed to load customers from database:", error);
+      console.error("Impossible de charger les clients depuis la base de données:", error);
       // Initialize with default customers if database is empty
       return this.initializeDefaultCustomers();
     }
@@ -110,6 +111,7 @@ class CustomerService {
 
     const sqliteCustomer = this.convertToSQLite(newCustomer);
     const result = await sqliteService.syncCustomers([sqliteCustomer]);
+    bidirectionalSync.pushMutation({ action: 'CREATE', entityType: 'customer', entityId: newCustomer.id, data: newCustomer });
     return this.convertFromSQLite(result[0]);
   }
 
@@ -120,7 +122,7 @@ class CustomerService {
     const customer = await this.getCustomer(id);
 
     if (!customer) {
-      throw new Error("Customer not found");
+      throw new Error("Client introuvable");
     }
 
     const updated: Customer = {
@@ -131,21 +133,21 @@ class CustomerService {
 
     const sqliteCustomer = this.convertToSQLite(updated);
     const result = await sqliteService.syncCustomers([sqliteCustomer]);
+    bidirectionalSync.pushMutation({ action: 'UPDATE', entityType: 'customer', entityId: id, data: updated });
     return this.convertFromSQLite(result[0]);
   }
 
   async deleteCustomer(id: string): Promise<void> {
-    // Note: We can't delete customers from SQLite via the current API,
-    // but applications should use an "archived" flag instead of hard deletion
-    console.warn(
-      "Hard deletion not supported. Consider using a soft delete flag instead.",
-    );
+    const customer = await this.getCustomer(id);
+    if (customer) {
+      bidirectionalSync.pushMutation({ action: 'DELETE', entityType: 'customer', entityId: id, data: { id } });
+    }
   }
 
   async addLoyaltyPoints(id: string, points: number): Promise<Customer> {
     const customer = await this.getCustomer(id);
     if (!customer) {
-      throw new Error("Customer not found");
+      throw new Error("Client introuvable");
     }
 
     return this.updateCustomer(id, {
@@ -156,7 +158,7 @@ class CustomerService {
   async recordOrder(id: string, amount: number): Promise<Customer> {
     const customer = await this.getCustomer(id);
     if (!customer) {
-      throw new Error("Customer not found");
+      throw new Error("Client introuvable");
     }
 
     // Add 1 point per 10€ spent
@@ -279,7 +281,7 @@ class CustomerService {
       );
       await sqliteService.syncCustomers(sqliteCustomers);
     } catch (error) {
-      console.error("Failed to initialize default customers:", error);
+      console.error("Impossible d'initialiser les clients par défaut:", error);
     }
 
     return defaultCustomers;

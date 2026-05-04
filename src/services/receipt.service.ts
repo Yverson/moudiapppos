@@ -1,4 +1,5 @@
 import { Order } from './api.service';
+import { formatAmount } from '../utils/format';
 
 export interface Receipt {
   orderId: string;
@@ -37,24 +38,24 @@ class ReceiptService {
     lines.push('-'.repeat(lineWidth));
 
     // Items
-    lines.push('Item'.padEnd(30) + 'Qty'.padStart(4) + 'Price'.padStart(7));
+    lines.push('Article'.padEnd(30) + 'Qté'.padStart(4) + 'Prix'.padStart(7));
     lines.push('-'.repeat(lineWidth));
     receipt.items.forEach((item) => {
       const name = item.name.substring(0, 30).padEnd(30);
       const qty = String(item.quantity).padStart(4);
-      const price = `${(item.price * item.quantity).toFixed(2)}`.padStart(7);
+      const price = formatAmount(item.price * item.quantity).padStart(7);
       lines.push(name + qty + price);
     });
 
     // Totals
     lines.push('-'.repeat(lineWidth));
     lines.push(
-      'Subtotal'.padEnd(35) + `${receipt.subtotal.toFixed(2)}`.padStart(6)
+      'Sous-total'.padEnd(35) + formatAmount(receipt.subtotal).padStart(6)
     );
-    lines.push('Tax (20%)'.padEnd(35) + `${receipt.tax.toFixed(2)}`.padStart(6));
+    lines.push('Taxe (20%)'.padEnd(35) + formatAmount(receipt.tax).padStart(6));
     lines.push('='.repeat(lineWidth));
     lines.push(
-      'TOTAL'.padEnd(35) + `${receipt.total.toFixed(2)}`.padStart(6)
+      'TOTAL'.padEnd(35) + formatAmount(receipt.total).padStart(6)
     );
     lines.push('='.repeat(lineWidth));
 
@@ -81,7 +82,7 @@ class ReceiptService {
    */
   async exportPDF(receipt: Receipt): Promise<void> {
     const filename = `receipt-${receipt.orderId}-${Date.now()}.pdf`;
-    console.log('PDF export would save as:', filename);
+    console.log('Export PDF prévu sous:', filename);
     // TODO: Implement jsPDF generation
   }
 
@@ -91,7 +92,7 @@ class ReceiptService {
    */
   async printThermal(receipt: Receipt): Promise<void> {
     const receiptText = this.generateThermalReceipt(receipt);
-    console.log('Would print to thermal printer:\n', receiptText);
+    console.log('Impression prévue sur imprimante thermique:\n', receiptText);
     // TODO: Implement printer communication via Tauri/Node.js
   }
 
@@ -101,7 +102,7 @@ class ReceiptService {
   generateFromOrder(
     order: Order,
     customerName?: string,
-    paymentMethod = 'Cash'
+    paymentMethod = 'Espèces'
   ): Receipt {
     return {
       orderId: order.order_number,

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import apiService, { Order } from '@/services/api.service';
+import apiService, { Order } from '../services/api.service';
 
 export interface UseOrderStatusReturn {
   orders: Order[];
@@ -26,7 +26,7 @@ export function useOrderStatus(
       setOrders(data);
       setLastUpdated(new Date());
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch orders'));
+      setError(err instanceof Error ? err : new Error('Impossible de charger les commandes'));
     } finally {
       setLoading(false);
     }

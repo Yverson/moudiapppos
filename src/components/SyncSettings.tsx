@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import syncService, { SyncResult, SyncOptions } from '../services/sync.service';
+import bidirectionalSyncService from '../services/bidirectional-sync.service';
+import { useActiveRestaurant } from '../services/restaurant-config';
 
 export default function SyncSettings() {
+  const activeRestaurant = useActiveRestaurant();
   const [syncStatus, setSyncStatus] = useState<any>({});
   const [localCount, setLocalCount] = useState({ categories: 0, menuItems: 0, customers: 0, livreurs: 0 });
   const [isSyncing, setIsSyncing] = useState(false);
@@ -15,8 +18,10 @@ export default function SyncSettings() {
   });
 
   useEffect(() => {
+    syncService.setRestaurantId(activeRestaurant.id);
+    bidirectionalSyncService.setRestaurantId(activeRestaurant.id);
     loadSyncData();
-  }, []);
+  }, [activeRestaurant.id]);
 
   const loadSyncData = async () => {
     try {
@@ -27,7 +32,7 @@ export default function SyncSettings() {
       setSyncStatus(status);
       setLocalCount(count);
     } catch (error) {
-      console.error('Failed to load sync data:', error);
+      console.error('Erreur lors du chargement des données de synchronisation:', error);
     }
   };
 
@@ -45,7 +50,7 @@ export default function SyncSettings() {
       setSyncResult({
         success: false,
         message: error instanceof Error ? error.message : 'Erreur de synchronisation',
-        details: { categories: { synced: 0, errors: [] }, menuItems: { synced: 0, errors: [] }, customers: { synced: 0, errors: [] }, livreurs: { synced: 0, errors: [] } },
+        details: { categories: { synced: 0, errors: [] }, menuItems: { synced: 0, errors: [] }, customers: { synced: 0, errors: [] }, livreurs: { synced: 0, errors: [] }, orders: { synced: 0, errors: [] } },
         timestamp: new Date().toISOString(),
       });
     } finally {
@@ -106,6 +111,16 @@ export default function SyncSettings() {
             <div className="text-xs text-slate-500">
               Dernière sync: {formatDate(syncStatus.livreurs)}
             </div>
+          </div>
+        </div>
+        
+        <div className="mt-4 bg-[#233648] rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-slate-400 text-sm">Personnel</span>
+            <span className="text-emerald-400 text-sm font-medium">Synchronisation auto</span>
+          </div>
+          <div className="text-xs text-slate-500">
+            Le personnel se synchronise automatiquement depuis l'API lors du chargement de la page /roles
           </div>
         </div>
       </div>

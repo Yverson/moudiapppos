@@ -1,4 +1,13 @@
-import { invoke } from '@tauri-apps/api/tauri';
+import { invokeOrFallback } from './platform';
+import {
+  web_create_order_offline,
+  web_update_order_offline,
+  web_get_orders,
+  web_get_pending_orders,
+  web_add_to_sync_queue,
+  web_get_pending_sync_items,
+  web_sync_pending_orders,
+} from './db-web';
 
 // Types matching Rust structs
 export interface Order {
@@ -15,11 +24,13 @@ export interface Order {
   payment_status: string; // 'pending', 'paid', 'refunded'
   payment_method?: string;
   notes?: string;
+  session_id?: string; // ID de la session de caisse (X/Z), équivalent à Commandes.SessionId cloud
   created_at: string;
   updated_at: string;
   synced_at?: string;
   sync_status: string; // 'pending', 'synced', 'error'
   sync_error?: string;
+  source?: string; // 'local' ou 'online'
 }
 
 export interface OrderItem {
@@ -58,36 +69,36 @@ export interface SyncResult {
 class OfflineOrderService {
   // Order operations
   async createOrderOffline(order: Order): Promise<Order> {
-    return await invoke('create_order_offline', { order });
+    return await invokeOrFallback('create_order_offline', { order }, () => web_create_order_offline(order));
   }
 
   async updateOrderOffline(order: Order): Promise<Order> {
-    return await invoke('update_order_offline', { order });
+    return await invokeOrFallback('update_order_offline', { order }, () => web_update_order_offline(order));
   }
 
   async getOrders(restaurantId: string, status?: string): Promise<Order[]> {
-    return await invoke('get_orders', { restaurantId, status });
+    return await invokeOrFallback('get_orders', { restaurantId, status }, () => web_get_orders(restaurantId, status));
   }
 
   async getPendingOrders(restaurantId: string): Promise<Order[]> {
-    return await invoke('get_pending_orders', { restaurantId });
+    return await invokeOrFallback('get_pending_orders', { restaurantId }, () => web_get_pending_orders(restaurantId));
   }
 
   // Sync queue operations
   async addToSyncQueue(queueItem: SyncQueue): Promise<SyncQueue> {
-    return await invoke('add_to_sync_queue', { queueItem });
+    return await invokeOrFallback('add_to_sync_queue', { queueItem }, () => web_add_to_sync_queue(queueItem));
   }
 
   async getPendingSyncItems(): Promise<SyncQueue[]> {
-    return await invoke('get_pending_sync_items');
+    return await invokeOrFallback('get_pending_sync_items', {}, () => web_get_pending_sync_items());
   }
 
   async syncPendingOrders(restaurantId: string, apiUrl: string): Promise<SyncResult> {
-    return await invoke('sync_pending_orders', { restaurantId, apiUrl });
+    return await invokeOrFallback('sync_pending_orders', { restaurantId, apiUrl }, () => web_sync_pending_orders(restaurantId, apiUrl));
   }
 
   // Helper methods
-  createOrderObject(orderData: {
+  async createOrderObject(orderData: {
     restaurantId: string;
     customerId?: string;
     items: OrderItem[];
@@ -97,10 +108,22 @@ class OfflineOrderService {
     discount?: number;
     paymentMethod?: string;
     notes?: string;
-  }): Order {
+  }): Promise<Order> {
     const now = new Date().toISOString();
     const orderId = `order-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
+
+    // Récupérer la session ouverte pour ce restaurant
+    let sessionId: string | undefined;
+    try {
+      const { web_get_open_cash_session } = await import('./db-web');
+      const openSession = await web_get_open_cash_session(orderData.restaurantId);
+      if (openSession) {
+        sessionId = openSession.id;
+      }
+    } catch (err) {
+      console.warn('[OfflineOrderService] Impossible de récupérer la session ouverte:', err);
+    }
+
     return {
       id: orderId,
       restaurant_id: orderData.restaurantId,
@@ -115,11 +138,13 @@ class OfflineOrderService {
       payment_status: 'pending',
       payment_method: orderData.paymentMethod,
       notes: orderData.notes,
+      session_id: sessionId, // Assigner à la session ouverte automatiquement
       created_at: now,
       updated_at: now,
       synced_at: undefined,
       sync_status: 'pending',
       sync_error: undefined,
+      source: 'local',
     };
   }
 

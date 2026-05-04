@@ -1,6 +1,7 @@
 import axios, { AxiosInstance } from "axios";
 import sqliteService from "./sqlite.service";
 import { Category, MenuItem, Customer } from "./sqlite.service";
+import { getActiveRestaurantId, getActiveRestaurantName, setActiveRestaurant } from "./restaurant-config";
 
 export interface SyncResult {
   success: boolean;
@@ -10,6 +11,7 @@ export interface SyncResult {
     menuItems: { synced: number; errors: string[] };
     customers: { synced: number; errors: string[] };
     livreurs: { synced: number; errors: string[] };
+    orders: { synced: number; errors: string[] };
   };
   timestamp: string;
 }
@@ -19,6 +21,7 @@ export interface SyncOptions {
   menuItems?: boolean;
   customers?: boolean;
   livreurs?: boolean;
+  orders?: boolean;
   overwrite?: boolean; // If true, will overwrite local data with API data
 }
 
@@ -32,9 +35,9 @@ class SyncService {
   constructor() {
     this.baseURL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-    // Load restaurant configuration from environment variables
-    this.restaurantId = import.meta.env.VITE_RESTAURANT_ID || null;
-    this.restaurantName = import.meta.env.VITE_RESTAURANT_NAME || null;
+    // Load restaurant configuration from the runtime selection first.
+    this.restaurantId = getActiveRestaurantId();
+    this.restaurantName = getActiveRestaurantName();
 
     // Load auth token from environment variables or localStorage
     this.authToken = import.meta.env.VITE_AUTH_TOKEN || null;
@@ -87,16 +90,10 @@ class SyncService {
 
   /**
    * Get the restaurant ID
-   * Priority: Direct set > localStorage > Environment variable
+   * Priority: localStorage runtime selection > Environment variable
    */
   getRestaurantId(): string | null {
-    if (!this.restaurantId) {
-      // Try to get from localStorage if not set
-      const stored = localStorage.getItem("restaurantId");
-      if (stored) {
-        this.restaurantId = stored;
-      }
-    }
+    this.restaurantId = getActiveRestaurantId();
     return this.restaurantId;
   }
 
@@ -106,9 +103,7 @@ class SyncService {
   getRestaurantName(): string | null {
     return (
       this.restaurantName ||
-      localStorage.getItem("restaurantName") ||
-      import.meta.env.VITE_RESTAURANT_NAME ||
-      null
+      getActiveRestaurantName()
     );
   }
 
@@ -117,7 +112,10 @@ class SyncService {
    */
   setRestaurantName(name: string) {
     this.restaurantName = name;
-    localStorage.setItem("restaurantName", name);
+    const restaurantId = this.getRestaurantId();
+    if (restaurantId) {
+      setActiveRestaurant({ id: restaurantId, name });
+    }
   }
 
   /**
@@ -165,6 +163,7 @@ class SyncService {
         menuItems: { synced: 0, errors: [] },
         customers: { synced: 0, errors: [] },
         livreurs: { synced: 0, errors: [] },
+        orders: { synced: 0, errors: [] },
       },
       timestamp: new Date().toISOString(),
     };
@@ -179,10 +178,16 @@ class SyncService {
     }
 
     try {
+      // Récupérer les dates de dernière synchronisation depuis le cloud
+      const syncStatus = await sqliteService.getSyncStatus();
+
       // Sync Categories
       if (options.categories !== false) {
         try {
-          const apiCategories = await this.fetchCategoriesFromAPI(restaurantId);
+          // Utiliser la date de dernière sync depuis le cloud
+          const lastSync = syncStatus.categories || null;
+          console.log('[Sync] Catégories - Dernière sync cloud:', lastSync || 'Jamais');
+          const apiCategories = await this.fetchCategoriesFromAPI(restaurantId, lastSync);
           const convertedCategories = apiCategories.map((cat) =>
             this.convertCategoryFromAPI(cat),
           );
@@ -196,6 +201,9 @@ class SyncService {
           }
 
           result.details.categories.synced = convertedCategories.length;
+          
+          // Mettre à jour le statut de synchronisation
+          await sqliteService.setSyncStatus('categories', new Date().toISOString());
         } catch (error) {
           result.details.categories.errors.push(
             error instanceof Error ? error.message : "Erreur inconnue",
@@ -207,7 +215,9 @@ class SyncService {
       // Sync Menu Items
       if (options.menuItems !== false) {
         try {
-          const apiMenuItems = await this.fetchMenuItemsFromAPI(restaurantId);
+          const lastSync = syncStatus.menu_items || null;
+          console.log('[Sync] Articles - Dernière sync cloud:', lastSync || 'Jamais');
+          const apiMenuItems = await this.fetchMenuItemsFromAPI(restaurantId, lastSync);
           const convertedItems = apiMenuItems.map((item) =>
             this.convertMenuItemFromAPI(item),
           );
@@ -221,6 +231,9 @@ class SyncService {
           }
 
           result.details.menuItems.synced = convertedItems.length;
+          
+          // Mettre à jour le statut de synchronisation
+          await sqliteService.setSyncStatus('menu_items', new Date().toISOString());
         } catch (error) {
           result.details.menuItems.errors.push(
             error instanceof Error ? error.message : "Erreur inconnue",
@@ -232,7 +245,9 @@ class SyncService {
       // Sync Customers
       if (options.customers !== false) {
         try {
-          const apiCustomers = await this.fetchCustomersFromAPI(restaurantId);
+          const lastSync = syncStatus.customers || null;
+          console.log('[Sync] Clients - Dernière sync cloud:', lastSync || 'Jamais');
+          const apiCustomers = await this.fetchCustomersFromAPI(restaurantId, lastSync);
           const convertedCustomers = apiCustomers.map((customer) =>
             this.convertCustomerFromAPI(customer),
           );
@@ -246,6 +261,9 @@ class SyncService {
           }
 
           result.details.customers.synced = convertedCustomers.length;
+          
+          // Mettre à jour le statut de synchronisation
+          await sqliteService.setSyncStatus('customers', new Date().toISOString());
         } catch (error) {
           result.details.customers.errors.push(
             error instanceof Error ? error.message : "Erreur inconnue",
@@ -257,28 +275,76 @@ class SyncService {
       // Sync Livreurs
       if (options.livreurs !== false) {
         try {
+          const lastSync = syncStatus.livreurs || null;
           console.log('[Sync] Récupération des livreurs depuis API...');
-          const apiLivreurs = await this.fetchLivreursFromAPI(restaurantId);
+          console.log('[Sync] Livreurs - Dernière sync cloud:', lastSync || 'Jamais');
+          const apiLivreurs = await this.fetchLivreursFromAPI(restaurantId, lastSync);
           console.log(`[Sync] ${apiLivreurs.length} livreurs récupérés depuis API`);
           
           // Sync to SQLite via Tauri
           for (const livreur of apiLivreurs) {
-            console.log('[Sync] Traitement livreur:', livreur.id || livreur.Id, livreur.nom || livreur.Nom);
+            console.log('[Sync] ===== LIVREUR BRUT DE L\'API =====');
+            console.log('[Sync] Données complètes:', JSON.stringify(livreur, null, 2));
+            console.log('[Sync] Champs détectés:', {
+              id: livreur.id,
+              Id: livreur.Id,
+              nom: livreur.nom,
+              Nom: livreur.Nom,
+              prenom: livreur.prenom,
+              Prenom: livreur.Prenom,
+              statut: livreur.statut,
+              Statut: livreur.Statut,
+            });
+            
             const convertedLivreur = this.convertLivreurFromAPI(livreur, restaurantId);
-            console.log('[Sync] Livreur converti:', convertedLivreur);
+            console.log('[Sync] ===== LIVREUR CONVERTI =====');
+            console.log('[Sync] Données converties:', JSON.stringify(convertedLivreur, null, 2));
+            
             try {
-              await sqliteService.upsertLivreur(convertedLivreur);
-              console.log('[Sync] Livreur sauvegardé avec succès');
+              // Vérifier la plateforme
+              const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+              console.log('[Sync] 🖥️ Plateforme:', isTauri ? 'Tauri (SQLite)' : 'Web (IndexedDB)');
+              
+              const result = await sqliteService.upsertLivreur(convertedLivreur);
+              console.log('[Sync] ✅ Livreur sauvegardé avec succès, résultat:', result);
+              
+              // Vérifier que les données sont bien dans la DB
+              const verification = await sqliteService.getLivreurs(restaurantId);
+              console.log('[Sync] 🔍 Vérification: Total livreurs dans la DB:', verification.length);
             } catch (syncError) {
-              console.error('[Sync] Erreur sauvegarde livreur:', syncError);
+              console.error('[Sync] ❌ Erreur sauvegarde livreur:', syncError);
               throw syncError;
             }
           }
 
           result.details.livreurs.synced = apiLivreurs.length;
+          
+          // Mettre à jour le statut de synchronisation
+          await sqliteService.setSyncStatus('livreurs', new Date().toISOString());
+          console.log('[Sync] ✅ Statut de synchronisation mis à jour pour livreurs');
         } catch (error) {
           console.error('[Sync] Erreur synchronisation livreurs:', error);
           result.details.livreurs.errors.push(
+            error instanceof Error ? error.message : "Erreur inconnue",
+          );
+          result.success = false;
+        }
+      }
+
+      // Sync Orders (Push local orders to cloud)
+      if (options.orders !== false) {
+        try {
+          console.log('[Sync] Synchronisation des commandes locales vers le cloud...');
+          const syncResult = await this.syncOrders(restaurantId);
+          result.details.orders.synced = syncResult.synced;
+          result.details.orders.errors = syncResult.errors;
+          
+          if (syncResult.errors.length > 0) {
+            result.success = false;
+          }
+        } catch (error) {
+          console.error('[Sync] Erreur synchronisation commandes:', error);
+          result.details.orders.errors.push(
             error instanceof Error ? error.message : "Erreur inconnue",
           );
           result.success = false;
@@ -307,10 +373,12 @@ class SyncService {
    * Fetch categories from MOUDI API
    * Endpoint: GET /api/restaurants/{id}/categories
    */
-  private async fetchCategoriesFromAPI(restaurantId: string): Promise<any[]> {
+  private async fetchCategoriesFromAPI(restaurantId: string, lastSync: string | null = null): Promise<any[]> {
     try {
+      const params = lastSync ? { lastSync } : {};
       const response = await this.api.get(
         `/api/restaurants/${restaurantId}/categories`,
+        { params }
       );
       return response.data?.data || response.data || [];
     } catch (error) {
@@ -326,7 +394,7 @@ class SyncService {
    * Fetch menu items from MOUDI API
    * Endpoint: GET /api/restaurants/{id}/menu
    */
-  private async fetchMenuItemsFromAPI(restaurantId: string): Promise<any[]> {
+  private async fetchMenuItemsFromAPI(restaurantId: string, lastSync: string | null = null): Promise<any[]> {
     try {
       // First, get the restaurant details which includes the menu
       const response = await this.api.get(`/api/restaurants/${restaurantId}`);
@@ -367,10 +435,12 @@ class SyncService {
    * Fetch customers from MOUDI API
    * Endpoint: GET /api/restaurants/{id}/clients
    */
-  private async fetchCustomersFromAPI(restaurantId: string): Promise<any[]> {
+  private async fetchCustomersFromAPI(restaurantId: string, lastSync: string | null = null): Promise<any[]> {
     try {
+      const params = lastSync ? { lastSync } : {};
       const response = await this.api.get(
         `/api/restaurants/${restaurantId}/clients`,
+        { params }
       );
       return response.data?.data || response.data || [];
     } catch (error) {
@@ -502,10 +572,12 @@ class SyncService {
    * Fetch livreurs from MOUDI API
    * Endpoint: GET /api/restaurants/{id}/livreurs
    */
-  private async fetchLivreursFromAPI(restaurantId: string): Promise<any[]> {
+  private async fetchLivreursFromAPI(restaurantId: string, lastSync: string | null = null): Promise<any[]> {
     try {
+      const params = lastSync ? { lastSync } : {};
       const response = await this.api.get(
         `/api/restaurants/${restaurantId}/livreurs`,
+        { params }
       );
       return response.data?.data || response.data || [];
     } catch (error) {
@@ -522,8 +594,8 @@ class SyncService {
    */
   private convertLivreurFromAPI(apiLivreur: any, restaurantId: string): any {
     // Convertir statut en active (actif = true, autres = false)
-    const statut = apiLivreur.statut || apiLivreur.Statut || '';
-    const isActive = statut === 'actif' || statut === 'ACTIF' || apiLivreur.actif === true || apiLivreur.active === true;
+    const statut = (apiLivreur.statut || apiLivreur.Statut || '').toLowerCase();
+    const isActive = statut === 'actif' || statut === 'active' || statut === 'actif(e)' || apiLivreur.actif === true || apiLivreur.active === true;
     
     return {
       id: apiLivreur.id || apiLivreur.Id || `livreur-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -536,6 +608,177 @@ class SyncService {
       created_at: apiLivreur.dateInscription || apiLivreur.DateInscription || apiLivreur.created_at || apiLivreur.CreatedAt || new Date().toISOString(),
       updated_at: apiLivreur.dateModification || apiLivreur.DateModification || apiLivreur.updated_at || apiLivreur.UpdatedAt || new Date().toISOString(),
     };
+  }
+
+  /**
+   * Synchroniser les commandes locales vers le cloud
+   */
+  private async syncOrders(restaurantId: string): Promise<{ synced: number; errors: string[] }> {
+    const result = { synced: 0, errors: [] as string[] };
+
+    try {
+      // Importer le service offline-order
+      const offlineOrderService = (await import('./offline-order.service')).default;
+      
+      // Récupérer les commandes en attente de synchronisation
+      const allPendingOrders = await offlineOrderService.getPendingOrders(restaurantId);
+      
+      // Filtrer pour ne garder que les commandes jamais synchronisées (sans synced_at)
+      const pendingOrders = allPendingOrders.filter(order => 
+        !order.synced_at && order.sync_status === 'pending'
+      );
+      
+      if (pendingOrders.length === 0) {
+        console.log('[Sync] Aucune commande en attente de synchronisation');
+        return result;
+      }
+
+      console.log(`[Sync] ${pendingOrders.length} nouvelles commandes à synchroniser (${allPendingOrders.length} total pending)`);
+
+      // Transformer les commandes au format backend
+      const ordersToSync = pendingOrders.map(order => {
+        const items = JSON.parse(order.items || '[]');
+        const orderAny = order as any; // Cast pour accéder aux champs optionnels
+        
+        return {
+          Id: order.id,
+          NumeroCommande: order.order_number,
+          RestaurantId: restaurantId,
+          UtilisateurId: order.customer_id,
+          LivreurId: orderAny.livreur_id,
+          SessionId: orderAny.session_id,
+          Statut: this.mapLocalStatusToBackend(order.status),
+          StatutPaiement: order.payment_status,
+          SousTotal: order.subtotal,
+          Taxes: order.tax,
+          Total: order.total,
+          RemisePromo: order.discount,
+          MethodePaiement: order.payment_method || 'cash',
+          InstructionsSpeciales: order.notes,
+          DateCreation: order.created_at,
+          DateModification: order.updated_at,
+          Items: items.map((item: any) => ({
+            PlatId: item.menu_item_id || item.id,
+            NomPlat: item.name,
+            Quantite: item.quantity,
+            PrixUnitaire: item.price || item.unit_price,
+            PrixTotal: item.total_price || (item.price * item.quantity),
+            InstructionsSpeciales: item.notes
+          }))
+        };
+      });
+
+      // Envoyer vers l'API
+      const response = await this.api.post(
+        `/api/restaurants/${restaurantId}/orders/sync`,
+        { Orders: ordersToSync }
+      );
+
+      console.log('[Sync] Réponse brute du serveur:', response.data);
+      
+      if (response.data.Success || response.data.success) {
+        const syncResponse = response.data;
+        console.log('[Sync] ✅ Réponse du serveur (succès):', JSON.stringify(syncResponse, null, 2));
+        
+        // Mettre à jour le statut de synchronisation pour chaque commande
+        for (const orderResult of syncResponse.Results || syncResponse.results || []) {
+          const orderId = orderResult.OrderId || orderResult.orderId;
+          console.log(`[Sync] Traitement résultat pour commande ${orderId}:`, orderResult);
+          
+          if (orderResult.Success || orderResult.success) {
+            // Marquer la commande comme synchronisée
+            const order = pendingOrders.find(o => o.id === orderId);
+            if (order) {
+              console.log(`[Sync] Mise à jour du statut de la commande ${orderId} vers 'synced'`);
+              try {
+                await offlineOrderService.updateOrderOffline({
+                  ...order,
+                  sync_status: 'synced',
+                  synced_at: new Date().toISOString(),
+                  sync_error: undefined
+                });
+                console.log(`[Sync] ✅ Commande ${orderId} marquée comme synchronisée`);
+                result.synced++;
+              } catch (updateError) {
+                console.error(`[Sync] ❌ Erreur lors de la mise à jour de la commande ${orderId}:`, updateError);
+                result.errors.push(`Erreur mise à jour ${orderId}: ${updateError}`);
+              }
+            } else {
+              console.warn(`[Sync] ⚠️ Commande ${orderId} non trouvée dans la liste des commandes en attente`);
+            }
+          } else {
+            const errorMsg = orderResult.ErrorMessage || orderResult.errorMessage || 'Erreur inconnue';
+            console.error(`[Sync] ❌ Erreur pour commande ${orderId}:`, errorMsg);
+            result.errors.push(errorMsg);
+          }
+        }
+
+        console.log(`[Sync] ✅ ${result.synced} commandes synchronisées avec succès`);
+      } else {
+        console.error('[Sync] ❌ Erreur dans la réponse du serveur:', response.data);
+        
+        // Afficher les détails de chaque erreur
+        const syncResponse = response.data;
+        const results = syncResponse.Results || syncResponse.results || [];
+        console.error(`[Sync] ❌ ${results.length} commandes en erreur. Détails:`);
+        
+        // Traiter chaque résultat même en cas d'échec global
+        for (const orderResult of results) {
+          const orderId = orderResult.OrderId || orderResult.orderId;
+          const errorMsg = orderResult.ErrorMessage || orderResult.errorMessage || 'Erreur inconnue';
+          const status = orderResult.Status || orderResult.status || '';
+          
+          console.error(`[Sync] ❌ Commande ${orderId}:`, errorMsg, `(Status: ${status})`);
+          
+          // Si la commande existe déjà (updated) ou a été créée avec succès, la marquer comme synced
+          if (status === 'updated' || status === 'created' || (orderResult.Success || orderResult.success)) {
+            const order = pendingOrders.find(o => o.id === orderId);
+            if (order) {
+              console.log(`[Sync] ℹ️ Commande ${orderId} déjà sur le cloud, marquage comme synced localement`);
+              try {
+                await offlineOrderService.updateOrderOffline({
+                  ...order,
+                  sync_status: 'synced',
+                  synced_at: new Date().toISOString(),
+                  sync_error: undefined
+                });
+                console.log(`[Sync] ✅ Commande ${orderId} marquée comme synchronisée`);
+                result.synced++;
+              } catch (updateError) {
+                console.error(`[Sync] ❌ Erreur lors de la mise à jour de la commande ${orderId}:`, updateError);
+                result.errors.push(`${orderId}: Erreur mise à jour locale`);
+              }
+            }
+          } else {
+            result.errors.push(`${orderId}: ${errorMsg}`);
+          }
+        }
+        
+        console.log(`[Sync] Résultat final: ${result.synced} synced, ${result.errors.length} errors`);
+      }
+    } catch (error) {
+      console.error('[Sync] Erreur lors de la synchronisation des commandes:', error);
+      result.errors.push(error instanceof Error ? error.message : 'Erreur inconnue');
+    }
+
+    return result;
+  }
+
+  /**
+   * Mapper les statuts locaux vers les statuts backend
+   */
+  private mapLocalStatusToBackend(status: string): string {
+    const map: Record<string, string> = {
+      'pending_local': 'pending',
+      'pending_delivery': 'paid',
+      'preparing': 'preparing',
+      'ready': 'ready',
+      'delivering': 'delivering',
+      'delivered': 'delivered',
+      'cancelled': 'cancelled',
+      'refunded': 'refunded',
+    };
+    return map[status] || status;
   }
 
   // Method to check if local data needs sync
@@ -580,7 +823,10 @@ class SyncService {
     livreurs: number;
   }> {
     try {
-      const restaurantId = this.getRestaurantId() || 'demo-restaurant';
+      const restaurantId = this.getRestaurantId();
+      if (!restaurantId) {
+        return { categories: 0, menuItems: 0, customers: 0, livreurs: 0 };
+      }
       const [categories, menuItems, customers, livreurs] = await Promise.all([
         sqliteService.getCategories(),
         sqliteService.getMenuItems(),

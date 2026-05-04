@@ -1,5 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
-import { invoke } from '@tauri-apps/api/tauri';
+import { useState, useEffect } from 'react';
+import { invokeOrFallback } from '../services/platform';
+import { web_complete_order_payment, CompletePaymentRequest } from '../services/db-web';
+import { formatAmount } from '../utils/format';
+import { useActiveRestaurant } from '../services/restaurant-config';
 
 /**
  * Payment Method Enum
@@ -62,8 +65,10 @@ interface PaymentModalProps {
   onClose: () => void;
   total: number;
   orderId: string;
-  onPaymentSuccess?: (receipt: PaymentResponse) => void;
+  onPaymentSuccess?: (receipt: PaymentResponse) => void | Promise<void>;
 }
+
+type PaymentAction = 'complete' | 'mark-paid' | 'deliver';
 
 export default function PaymentModal({
   isOpen,
@@ -74,23 +79,23 @@ export default function PaymentModal({
 }: PaymentModalProps) {
   const [amount, setAmount] = useState('0.00');
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(PaymentMethod.CASH);
-  const [loading, setLoading] = useState(false);
+  const [loadingAction, setLoadingAction] = useState<PaymentAction | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [splitAmounts, setSplitAmounts] = useState({ method1: PaymentMethod.CASH as PaymentMethod, amount1: '', method2: PaymentMethod.CARD as PaymentMethod, amount2: '' });
+  const [splitPayments, setSplitPayments] = useState<Array<{ method: PaymentMethod; amount: string }>>([]);
 
-  const restaurantId = useMemo(() => localStorage.getItem('restaurantId') || 'demo-restaurant', []);
+  const { id: restaurantId } = useActiveRestaurant();
+  const loading = loadingAction !== null;
 
   // Calculate values
   const tendered = parseFloat(amount) || 0;
   const change = tendered - total;
   const isValidAmount = selectedMethod === PaymentMethod.CASH ? tendered >= total : amount !== '0.00';
 
-  const splitTotal =
-    (parseFloat(splitAmounts.amount1 || '0') || 0) + (parseFloat(splitAmounts.amount2 || '0') || 0);
+  const splitTotal = splitPayments.reduce((sum, payment) => sum + (parseFloat(payment.amount || '0') || 0), 0);
 
   const canProceed =
     selectedMethod === PaymentMethod.SPLIT
-      ? !!splitAmounts.amount1 && !!splitAmounts.amount2 && splitTotal >= total
+      ? splitPayments.length > 0 && splitPayments.every(p => parseFloat(p.amount || '0') > 0) && splitTotal >= total
       : isValidAmount;
 
   // Reset message after 5 seconds
@@ -142,48 +147,66 @@ export default function PaymentModal({
    * Handle quick amount buttons
    */
   const handleQuickAmount = (value: number) => {
-    setAmount(value.toFixed(2));
+    setAmount(String(value));
   };
 
   /**
    * Process payment through API
    */
-  const handlePayment = async () => {
+  const handlePayment = async (action: PaymentAction = 'complete') => {
+    const useEnteredPayment = action === 'complete' || canProceed;
+    const effectiveMethod = useEnteredPayment ? selectedMethod : PaymentMethod.CASH;
+    const effectiveTendered = useEnteredPayment ? tendered : total;
+    const effectiveChange = effectiveTendered - total;
+    const effectiveSplitPayments =
+      useEnteredPayment && effectiveMethod === PaymentMethod.SPLIT ? splitPayments : [];
+    const effectiveSplitTotal = effectiveSplitPayments.reduce(
+      (sum, payment) => sum + (parseFloat(payment.amount || '0') || 0),
+      0
+    );
+
     try {
-      setLoading(true);
+      setLoadingAction(action);
       setMessage(null);
 
       const paidAt = new Date().toISOString();
 
       // Validate amount for cash payment
-      if (selectedMethod === PaymentMethod.CASH && tendered < total) {
+      if (effectiveMethod === PaymentMethod.CASH && effectiveTendered < total) {
         setMessage({
           type: 'error',
-          text: `Insufficient amount. Need at least $${total.toFixed(2)}`,
+          text: `Montant insuffisant. Minimum requis: ${formatAmount(total)}`,
         });
-        setLoading(false);
+        setLoadingAction(null);
         return;
       }
 
-      if (selectedMethod === PaymentMethod.SPLIT) {
-        const a1 = parseFloat(splitAmounts.amount1 || '0') || 0;
-        const a2 = parseFloat(splitAmounts.amount2 || '0') || 0;
-
-        if (a1 <= 0 || a2 <= 0) {
+      if (effectiveMethod === PaymentMethod.SPLIT) {
+        if (effectiveSplitPayments.length === 0) {
           setMessage({
             type: 'error',
-            text: 'Split payment amounts must be greater than 0.',
+            text: 'Veuillez ajouter au moins un paiement.',
           });
-          setLoading(false);
+          setLoadingAction(null);
           return;
         }
 
-        if (a1 + a2 + 0.000001 < total) {
+        const hasInvalidAmount = effectiveSplitPayments.some(p => parseFloat(p.amount || '0') <= 0);
+        if (hasInvalidAmount) {
           setMessage({
             type: 'error',
-            text: `Total split payment must cover at least $${total.toFixed(2)}`,
+            text: 'Tous les montants doivent être supérieurs à 0.',
           });
-          setLoading(false);
+          setLoadingAction(null);
+          return;
+        }
+
+        if (effectiveSplitTotal + 0.000001 < total) {
+          setMessage({
+            type: 'error',
+            text: `Le total des paiements doit couvrir au moins ${formatAmount(total)}`,
+          });
+          setLoadingAction(null);
           return;
         }
       }
@@ -206,37 +229,25 @@ export default function PaymentModal({
         orderId,
         restaurantId,
         payments:
-          selectedMethod === PaymentMethod.SPLIT
-            ? [
-                {
-                  method: methodToDbMethod(splitAmounts.method1),
-                  amount: parseFloat(splitAmounts.amount1),
-                  ...(splitAmounts.method1 === PaymentMethod.CASH
-                    ? {
-                        tendered: parseFloat(splitAmounts.amount1),
-                        change: 0,
-                      }
-                    : {}),
-                },
-                {
-                  method: methodToDbMethod(splitAmounts.method2),
-                  amount: parseFloat(splitAmounts.amount2),
-                  ...(splitAmounts.method2 === PaymentMethod.CASH
-                    ? {
-                        tendered: parseFloat(splitAmounts.amount2),
-                        change: 0,
-                      }
-                    : {}),
-                },
-              ]
+          effectiveMethod === PaymentMethod.SPLIT
+            ? effectiveSplitPayments.map(sp => ({
+                method: methodToDbMethod(sp.method),
+                amount: parseFloat(sp.amount),
+                ...(sp.method === PaymentMethod.CASH
+                  ? {
+                      tendered: parseFloat(sp.amount),
+                      change: 0,
+                    }
+                  : {}),
+              }))
             : [
                 {
-                  method: methodToDbMethod(selectedMethod),
+                  method: methodToDbMethod(effectiveMethod),
                   amount: total,
-                  ...(selectedMethod === PaymentMethod.CASH
+                  ...(effectiveMethod === PaymentMethod.CASH
                     ? {
-                        tendered,
-                        change: change > 0 ? change : 0,
+                        tendered: effectiveTendered,
+                        change: effectiveChange > 0 ? effectiveChange : 0,
                       }
                     : {}),
                 },
@@ -244,51 +255,63 @@ export default function PaymentModal({
         paidAt,
       };
 
-      const data: PaymentResponse = await invoke('complete_order_payment', {
-        request: {
-          order_id: paymentRequest.orderId,
-          restaurant_id: paymentRequest.restaurantId,
-          cash_session_id: paymentRequest.cashSessionId ?? null,
-          payments: paymentRequest.payments.map(p => ({
-            method: p.method,
-            amount: p.amount,
-            tendered: p.tendered ?? null,
-            change: p.change ?? null,
-            transaction_id: p.transaction_id ?? null,
-            metadata: p.metadata ?? null,
-          })),
-          paid_at: paymentRequest.paidAt,
-        },
-      });
+      const tauriRequest = {
+        order_id: paymentRequest.orderId,
+        restaurant_id: paymentRequest.restaurantId,
+        cash_session_id: paymentRequest.cashSessionId ?? null,
+        payments: paymentRequest.payments.map(p => ({
+          method: p.method,
+          amount: p.amount,
+          tendered: p.tendered ?? null,
+          change: p.change ?? null,
+          transaction_id: p.transaction_id ?? null,
+          metadata: p.metadata ?? null,
+        })),
+        paid_at: paymentRequest.paidAt,
+        final_status: action === 'deliver' ? 'delivered' : null,
+      } satisfies CompletePaymentRequest;
+
+      const data: PaymentResponse = await invokeOrFallback(
+        'complete_order_payment',
+        { request: tauriRequest },
+        () => web_complete_order_payment(tauriRequest)
+      );
 
       if (data.payment_status === 'paid') {
         setMessage({
           type: 'success',
-          text: `Payment successful! Paid $${data.total_paid.toFixed(2)}`,
+          text: `Paiement réussi! Montant payé: ${formatAmount(data.total_paid)}`,
         });
+
+        if (action === 'deliver') {
+          setMessage({
+            type: 'success',
+            text: `Commande livree. Montant paye: ${formatAmount(data.total_paid)}`,
+          });
+        }
 
         // Call success callback if provided
         if (onPaymentSuccess) {
-          onPaymentSuccess(data);
+          await onPaymentSuccess(data);
         }
 
         // Close modal after 2 seconds
         setTimeout(() => {
           onClose();
           setAmount('0.00');
-          setSplitAmounts({ method1: PaymentMethod.CASH, amount1: '', method2: PaymentMethod.CARD, amount2: '' });
+          setSplitPayments([]);
         }, 2000);
       } else {
-        throw new Error('Payment processing failed');
+        throw new Error('Le traitement du paiement a échoué');
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Payment failed. Please try again.';
+      const errorMessage = error instanceof Error ? error.message : 'Le paiement a échoué. Veuillez réessayer.';
       setMessage({
         type: 'error',
         text: errorMessage,
       });
     } finally {
-      setLoading(false);
+      setLoadingAction(null);
     }
   };
 
@@ -320,9 +343,9 @@ export default function PaymentModal({
           )}
         </div>
         <div className="text-left flex-1">
-          <p className="text-white text-lg font-bold">Cash</p>
+          <p className="text-white text-lg font-bold">Espèces</p>
           <p className={selectedMethod === PaymentMethod.CASH ? 'text-blue-400 text-sm' : 'text-slate-400 text-sm'}>
-            {selectedMethod === PaymentMethod.CASH ? 'Calculate change' : 'Physical currency'}
+            {selectedMethod === PaymentMethod.CASH ? 'Calculer la monnaie' : 'Paiement en espèces'}
           </p>
         </div>
       </button>
@@ -330,7 +353,7 @@ export default function PaymentModal({
       <button
         onClick={() => {
           setSelectedMethod(PaymentMethod.CARD);
-          setAmount(total.toFixed(2));
+          setAmount(String(total));
         }}
         className={`flex items-center p-5 rounded-xl border-2 transition-all w-full ${
           selectedMethod === PaymentMethod.CARD
@@ -350,15 +373,15 @@ export default function PaymentModal({
           )}
         </div>
         <div className="text-left flex-1">
-          <p className="text-slate-200 text-lg font-bold">Credit Card</p>
-          <p className="text-slate-400 text-sm">Visa, Mastercard, Amex (Stripe)</p>
+          <p className="text-slate-200 text-lg font-bold">Carte bancaire</p>
+          <p className="text-slate-400 text-sm">Visa, Mastercard, Amex</p>
         </div>
       </button>
 
       <button
         onClick={() => {
           setSelectedMethod(PaymentMethod.MOBILE_MONEY);
-          setAmount(total.toFixed(2));
+          setAmount(String(total));
         }}
         className={`flex items-center p-5 rounded-xl border-2 transition-all w-full ${
           selectedMethod === PaymentMethod.MOBILE_MONEY
@@ -386,7 +409,7 @@ export default function PaymentModal({
       <button
         onClick={() => {
           setSelectedMethod(PaymentMethod.SPLIT);
-          setSplitAmounts({ method1: PaymentMethod.CASH, amount1: '', method2: PaymentMethod.CARD, amount2: '' });
+          setSplitPayments([{ method: PaymentMethod.CASH, amount: '' }]);
         }}
         className={`flex items-center p-5 rounded-xl border-2 transition-all w-full ${
           selectedMethod === PaymentMethod.SPLIT
@@ -406,8 +429,8 @@ export default function PaymentModal({
           )}
         </div>
         <div className="text-left flex-1">
-          <p className="text-slate-200 text-lg font-bold">Split Payment</p>
-          <p className="text-slate-400 text-sm">Multiple payment methods</p>
+          <p className="text-slate-200 text-lg font-bold">Paiement partagé</p>
+          <p className="text-slate-400 text-sm">Plusieurs méthodes de paiement</p>
         </div>
       </button>
     </>
@@ -474,7 +497,7 @@ export default function PaymentModal({
           <div className="h-16 border-b border-slate-700/50 flex items-center justify-between px-8 bg-[#111a22]">
             <div className="flex items-center gap-3">
               <span className="material-symbols-outlined text-slate-400">receipt_long</span>
-              <h1 className="text-lg font-semibold text-slate-200">Payment: Order #{orderId}</h1>
+              <h1 className="text-lg font-semibold text-slate-200">Paiement: commande #{orderId}</h1>
             </div>
             <button
               onClick={onClose}
@@ -490,22 +513,22 @@ export default function PaymentModal({
             {/* Left: Summary */}
             <div className="col-span-3 bg-[#111a22] border-r border-slate-700/50 flex flex-col p-6">
               <div className="mb-8">
-                <p className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-2">Total Due</p>
-                <h2 className="text-5xl font-bold text-white tracking-tight">${total.toFixed(2)}</h2>
+                <p className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-2">Total à payer</p>
+                <h2 className="text-5xl font-bold text-white tracking-tight">{formatAmount(total)}</h2>
               </div>
               <div className="space-y-4 flex-1">
                 <div className="flex justify-between items-center py-3 border-b border-slate-700/30">
-                  <span className="text-slate-400">Subtotal</span>
-                  <span className="text-slate-200 font-medium">${(total / 1.1).toFixed(2)}</span>
+                  <span className="text-slate-400">Sous-total</span>
+                  <span className="text-slate-200 font-medium">{formatAmount(total / 1.1)}</span>
                 </div>
                 <div className="flex justify-between items-center py-3 border-b border-slate-700/30">
-                  <span className="text-slate-400">Tax (10%)</span>
-                  <span className="text-slate-200 font-medium">${(total * 0.1).toFixed(2)}</span>
+                  <span className="text-slate-400">Taxe (10%)</span>
+                  <span className="text-slate-200 font-medium">{formatAmount(total * 0.1)}</span>
                 </div>
                 <div className="flex justify-between items-center py-3 border-b border-slate-700/30">
-                  <span className="text-slate-400 font-semibold">Remaining Balance</span>
+                  <span className="text-slate-400 font-semibold">Solde restant</span>
                   <span className={`font-bold text-lg ${tendered >= total ? 'text-green-400' : 'text-orange-400'}`}>
-                    ${Math.max(0, total - tendered).toFixed(2)}
+                    {formatAmount(Math.max(0, total - tendered))}
                   </span>
                 </div>
               </div>
@@ -513,7 +536,7 @@ export default function PaymentModal({
 
             {/* Center: Payment Methods */}
             <div className="col-span-4 bg-[#151f2a] border-r border-slate-700/50 p-6 flex flex-col overflow-y-auto">
-              <p className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-6">Payment Method</p>
+              <p className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-6">Méthode de paiement</p>
               <div className="space-y-4 flex-1">
                 {renderPaymentMethods()}
               </div>
@@ -523,55 +546,75 @@ export default function PaymentModal({
             <div className="col-span-5 bg-[#111a22] p-6 flex flex-col">
               {selectedMethod === PaymentMethod.SPLIT ? (
                 // Split payment UI
-                <div className="flex flex-col gap-4">
-                  <p className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-2">Split Payment</p>
-                  <div className="bg-black/40 rounded-xl p-4 border border-slate-700/50">
-                    <p className="text-slate-400 text-xs mb-2">Method 1 Amount</p>
-                    <select
-                      title="Méthode de paiement 1"
-                      value={splitAmounts.method1}
-                      onChange={e => setSplitAmounts({ ...splitAmounts, method1: e.target.value as PaymentMethod })}
-                      className="w-full mb-3 bg-[#233342] text-white rounded-lg px-3 py-2 border border-slate-700"
+                <div className="flex flex-col gap-4 h-full">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-slate-400 text-sm font-medium uppercase tracking-wider">Paiement partagé</p>
+                    <button
+                      onClick={() => setSplitPayments([...splitPayments, { method: PaymentMethod.CASH, amount: '' }])}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
                     >
-                      <option value={PaymentMethod.CASH}>Cash</option>
-                      <option value={PaymentMethod.CARD}>Credit Card</option>
-                      <option value={PaymentMethod.MOBILE_MONEY}>Mobile Money</option>
-                    </select>
-                    <input
-                      type="number"
-                      title="Montant paiement 1"
-                      placeholder="0.00"
-                      value={splitAmounts.amount1}
-                      onChange={e => setSplitAmounts({ ...splitAmounts, amount1: e.target.value })}
-                      className="w-full bg-transparent text-3xl font-mono text-white outline-none"
-                    />
+                      <span className="material-symbols-outlined text-base">add</span>
+                      Ajouter
+                    </button>
                   </div>
-                  <div className="bg-black/40 rounded-xl p-4 border border-slate-700/50">
-                    <p className="text-slate-400 text-xs mb-2">Method 2 Amount</p>
-                    <select
-                      title="Méthode de paiement 2"
-                      value={splitAmounts.method2}
-                      onChange={e => setSplitAmounts({ ...splitAmounts, method2: e.target.value as PaymentMethod })}
-                      className="w-full mb-3 bg-[#233342] text-white rounded-lg px-3 py-2 border border-slate-700"
-                    >
-                      <option value={PaymentMethod.CASH}>Cash</option>
-                      <option value={PaymentMethod.CARD}>Credit Card</option>
-                      <option value={PaymentMethod.MOBILE_MONEY}>Mobile Money</option>
-                    </select>
-                    <input
-                      type="number"
-                      title="Montant paiement 2"
-                      placeholder="0.00"
-                      value={splitAmounts.amount2}
-                      onChange={e => setSplitAmounts({ ...splitAmounts, amount2: e.target.value })}
-                      className="w-full bg-transparent text-3xl font-mono text-white outline-none"
-                    />
+                  
+                  <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+                    {splitPayments.map((payment, index) => (
+                      <div key={index} className="bg-black/40 rounded-xl p-4 border border-slate-700/50 relative">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-slate-400 text-xs">Paiement {index + 1}</p>
+                          {splitPayments.length > 1 && (
+                            <button
+                              onClick={() => setSplitPayments(splitPayments.filter((_, i) => i !== index))}
+                              className="text-red-400 hover:text-red-300 transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-base">close</span>
+                            </button>
+                          )}
+                        </div>
+                        <select
+                          title={`Méthode de paiement ${index + 1}`}
+                          value={payment.method}
+                          onChange={e => {
+                            const newPayments = [...splitPayments];
+                            newPayments[index].method = e.target.value as PaymentMethod;
+                            setSplitPayments(newPayments);
+                          }}
+                          className="w-full mb-3 bg-[#233342] text-white rounded-lg px-3 py-2 border border-slate-700"
+                        >
+                          <option value={PaymentMethod.CASH}>Espèces</option>
+                          <option value={PaymentMethod.CARD}>Carte bancaire</option>
+                          <option value={PaymentMethod.MOBILE_MONEY}>Mobile Money</option>
+                        </select>
+                        <input
+                          type="number"
+                          title={`Montant paiement ${index + 1}`}
+                          placeholder="0.00"
+                          value={payment.amount}
+                          onChange={e => {
+                            const newPayments = [...splitPayments];
+                            newPayments[index].amount = e.target.value;
+                            setSplitPayments(newPayments);
+                          }}
+                          className="w-full bg-transparent text-2xl font-mono text-white outline-none"
+                        />
+                      </div>
+                    ))}
                   </div>
-                  <div className="bg-black/40 rounded-xl p-4 border border-slate-700/50 mt-4">
-                    <p className="text-slate-400 text-xs mb-2">Total Payment</p>
-                    <p className="text-3xl font-mono text-white">
-                      ${splitTotal.toFixed(2)}
+                  
+                  <div className="bg-black/40 rounded-xl p-4 border border-slate-700/50 mt-2">
+                    <div className="flex justify-between items-center mb-1">
+                      <p className="text-slate-400 text-xs">Total des paiements</p>
+                      <p className="text-slate-400 text-xs">Dû: {formatAmount(total)}</p>
+                    </div>
+                    <p className={`text-3xl font-mono font-bold ${
+                      splitTotal >= total ? 'text-green-400' : 'text-orange-400'
+                    }`}>
+                      {formatAmount(splitTotal)}
                     </p>
+                    {splitTotal < total && (
+                      <p className="text-red-400 text-xs mt-2">Manquant: {formatAmount(total - splitTotal)}</p>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -579,7 +622,7 @@ export default function PaymentModal({
                 <>
                   <div className="bg-black/40 rounded-xl p-4 mb-4 border border-slate-700/50 flex flex-col items-end">
                     <span className="text-slate-400 text-sm mb-1">
-                      {selectedMethod === PaymentMethod.CASH ? 'Tendered Amount' : 'Amount'}
+                      {selectedMethod === PaymentMethod.CASH ? 'Montant reçu' : 'Montant'}
                     </span>
                     <span className="text-4xl font-mono text-white tracking-wider flex items-center">
                       <span className="text-slate-500 mr-2">$</span>
@@ -614,17 +657,17 @@ export default function PaymentModal({
               <>
                 <div className="col-span-3 flex flex-col">
                   <span className="text-slate-400 text-xs font-medium uppercase tracking-wider mb-1">
-                    {selectedMethod === PaymentMethod.CASH ? 'Tendered' : 'Amount'}
+                    {selectedMethod === PaymentMethod.CASH ? 'Reçu' : 'Montant'}
                   </span>
                   <span className="text-2xl font-bold text-white">
-                    ${selectedMethod === PaymentMethod.SPLIT
-                      ? splitTotal.toFixed(2)
-                      : tendered.toFixed(2)}
+                    {selectedMethod === PaymentMethod.SPLIT
+                      ? formatAmount(splitTotal)
+                      : formatAmount(tendered)}
                   </span>
                 </div>
                 <div className="col-span-4 flex flex-col border-l border-slate-800 pl-8">
                   <span className="text-slate-400 text-xs font-medium uppercase tracking-wider mb-1">
-                    {selectedMethod === PaymentMethod.CASH ? 'Change Due' : 'Status'}
+                    {selectedMethod === PaymentMethod.CASH ? 'Monnaie à rendre' : 'Statut'}
                   </span>
                   <span
                     className={`text-3xl font-bold drop-shadow-[0_0_8px_rgba(74,222,128,0.25)] ${
@@ -636,35 +679,54 @@ export default function PaymentModal({
                     }`}
                   >
                     {selectedMethod === PaymentMethod.CASH
-                      ? `$${Math.max(0, change).toFixed(2)}`
+                      ? formatAmount(Math.max(0, change))
                       : change >= 0
-                        ? 'Ready'
-                        : 'Pending'}
+                        ? 'Prêt'
+                        : 'En attente'}
                   </span>
                 </div>
               </>
             )}
 
             {/* Action Buttons */}
-            <div className="col-span-5 flex justify-end gap-3">
+            <div className="col-span-5 flex justify-end gap-2">
               <button
+                type="button"
                 onClick={onClose}
                 disabled={loading}
-                className="h-14 px-6 rounded-lg border border-slate-600 text-slate-300 font-semibold hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="h-12 px-5 rounded-lg border border-slate-600 text-slate-300 font-semibold hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Cancel
+                Annuler
               </button>
               <button
-                onClick={handlePayment}
-                disabled={!canProceed || loading}
-                className={`h-14 px-8 rounded-lg text-white text-lg font-bold shadow-[0_4px_20px_-4px_rgba(43,140,238,0.5)] transition-all flex items-center gap-2 ${
-                  canProceed && !loading
+                type="button"
+                onClick={() => handlePayment('mark-paid')}
+                disabled={loading}
+                className={`h-12 px-5 rounded-lg text-white font-bold shadow-[0_4px_20px_-4px_rgba(43,140,238,0.5)] transition-all flex items-center gap-2 ${
+                  !loading
                     ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer'
                     : 'bg-slate-700 opacity-50 cursor-not-allowed'
                 }`}
               >
-                <span className="material-symbols-outlined">{loading ? 'hourglass_empty' : 'check_circle'}</span>
-                {loading ? 'Processing...' : 'Complete Payment'}
+                <span className="material-symbols-outlined">
+                  {loadingAction === 'mark-paid' ? 'hourglass_empty' : 'check_circle'}
+                </span>
+                {loadingAction === 'mark-paid' ? 'Traitement...' : 'Marquer payé'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePayment('deliver')}
+                disabled={loading}
+                className={`h-12 px-5 rounded-lg text-white font-bold shadow-[0_4px_20px_-4px_rgba(22,163,74,0.45)] transition-all flex items-center gap-2 ${
+                  !loading
+                    ? 'bg-green-600 hover:bg-green-500 cursor-pointer'
+                    : 'bg-slate-700 opacity-50 cursor-not-allowed'
+                }`}
+              >
+                <span className="material-symbols-outlined">
+                  {loadingAction === 'deliver' ? 'hourglass_empty' : 'local_shipping'}
+                </span>
+                {loadingAction === 'deliver' ? 'Livraison...' : 'Livrer directement'}
               </button>
             </div>
           </div>

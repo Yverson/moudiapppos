@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useMenu } from '../context/MenuContext';
 import { useCategory } from '../context/CategoryContext';
 import { MenuItem } from '../services/menu.service';
+import SettingsLayout from '../layouts/SettingsLayout';
+import { formatAmount } from '../utils/format';
 
 export default function MenuManagement() {
   const { menuItems, loading, error, createMenuItem, updateMenuItem, deleteMenuItem, toggleMenuItemAvailability } = useMenu();
@@ -108,23 +110,28 @@ export default function MenuManagement() {
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-[#101922] text-white">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-slate-400">Chargement...</p>
+      <SettingsLayout
+        title="Menu"
+        description="Gérez les articles de votre menu."
+      >
+        <div className="flex items-center justify-center h-64 text-white">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+            <p className="text-slate-400">Chargement...</p>
+          </div>
         </div>
-      </div>
+      </SettingsLayout>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#101922] text-white">
-      <div className="max-w-[1400px] mx-auto p-6 md:p-8 space-y-8">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-3xl md:text-4xl font-black tracking-tight">Menu</h1>
-            <p className="text-slate-400 text-sm md:text-base">Gérez les articles de votre menu.</p>
-          </div>
+    <SettingsLayout
+      title="Menu"
+      description="Gérez les articles de votre menu."
+    >
+      <div className="max-w-[1400px] mx-auto space-y-8">
+
+        <div className="flex justify-end">
           <button
             onClick={() => setShowForm(true)}
             className="flex items-center gap-2 px-5 h-10 rounded-lg bg-[#2b8cee] hover:bg-blue-600 text-white shadow-lg shadow-blue-900/20 active:scale-95 transition-all text-sm font-bold"
@@ -202,9 +209,9 @@ export default function MenuManagement() {
 
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <p className="text-2xl font-bold text-emerald-400">{item.price.toFixed(2)} €</p>
+                    <p className="text-2xl font-bold text-emerald-400">{formatAmount(item.price)}</p>
                     {item.cost_price > 0 && (
-                      <p className="text-xs text-slate-500">Coût: {item.cost_price.toFixed(2)} €</p>
+                      <p className="text-xs text-slate-500">Coût: {formatAmount(item.cost_price)}</p>
                     )}
                   </div>
                 </div>
@@ -418,6 +425,6 @@ export default function MenuManagement() {
           </div>
         )}
       </div>
-    </div>
+    </SettingsLayout>
   );
 }
