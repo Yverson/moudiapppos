@@ -3,7 +3,6 @@ import sqliteService from '../services/sqlite.service';
 import offlineOrderService, { Order } from '../services/offline-order.service';
 import { Category, MenuItem, Customer } from '../services/sqlite.service';
 import syncService from '../services/sync.service';
-import { isDesktop } from '../services/platform';
 
 interface DatabaseContextType {
   // Categories
@@ -84,14 +83,9 @@ export function DatabaseProvider({ children, restaurantId }: DatabaseProviderPro
       setIsConnected(true);
       setConnectionError(null);
     } catch (error) {
-      if (!isDesktop()) {
-        // En mode web, IndexedDB est toujours disponible — on considère la connexion établie
-        setIsConnected(true);
-        setConnectionError(null);
-      } else {
-        setIsConnected(false);
-        setConnectionError(error instanceof Error ? error.message : 'Erreur de connexion à la base de données');
-      }
+      console.error('[DatabaseContext] Erreur de connexion SQLite:', error);
+      setIsConnected(false);
+      setConnectionError(error instanceof Error ? error.message : 'Erreur de connexion à la base de données');
     } finally {
       setLoadingCategories(false);
     }

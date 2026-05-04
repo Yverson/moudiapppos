@@ -1,19 +1,4 @@
-import { invoke } from '@tauri-apps/api/tauri';
-
-async function invokeOrFallback<T>(
-  command: string,
-  args: any,
-  fallback: () => Promise<T>
-): Promise<T> {
-  try {
-    if (window.__TAURI__) {
-      return await invoke(command, args);
-    }
-  } catch (error) {
-    console.warn(`Tauri command ${command} failed, using fallback:`, error);
-  }
-  return await fallback();
-}
+import { tauriInvoke } from './platform';
 
 export interface PaymentMethod {
   id: string;
@@ -36,11 +21,7 @@ class PaymentMethodsService {
       const token = localStorage.getItem('authToken');
       const response = await fetch(`${baseURL}${url}`, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          ...config?.headers,
-        },
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...config?.headers },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response.json();
@@ -50,10 +31,7 @@ class PaymentMethodsService {
       const token = localStorage.getItem('authToken');
       const response = await fetch(`${baseURL}${url}`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -64,10 +42,7 @@ class PaymentMethodsService {
       const token = localStorage.getItem('authToken');
       const response = await fetch(`${baseURL}${url}`, {
         method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -78,10 +53,7 @@ class PaymentMethodsService {
       const token = localStorage.getItem('authToken');
       const response = await fetch(`${baseURL}${url}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response.json();
@@ -90,22 +62,9 @@ class PaymentMethodsService {
 
   async getPaymentMethods(userId: string): Promise<PaymentMethod[]> {
     try {
-      return await invokeOrFallback(
-        'get_payment_methods',
-        { userId },
-        async () => {
-          const { getDb } = await import('./db-web');
-          const db = await getDb();
-          // Vérifier que le store existe avant d'accéder
-          if (!db.objectStoreNames.contains('payment_methods')) {
-            console.warn('[PaymentMethods] Store payment_methods non trouvé, retourne tableau vide');
-            return [];
-          }
-          return await db.getAll('payment_methods');
-        }
-      );
+      return await tauriInvoke<PaymentMethod[]>('get_payment_methods', { userId });
     } catch (error) {
-      console.error('[PaymentMethods] Erreur lors de la récupération:', error);
+      console.error('[PaymentMethods] Erreur récupération:', error);
       return [];
     }
   }
@@ -129,35 +88,15 @@ class PaymentMethodsService {
           created_at: cloudPM.dateCreation || new Date().toISOString(),
           updated_at: cloudPM.dateModification || new Date().toISOString(),
         };
-
         await this.upsertLocal(localPM);
       }
-
-      console.log(
-        '═══ [PaymentMethods] ═══\n',
-        'Action: SYNC_FROM_CLOUD',
-        '\nNombre de moyens de paiement synchronisés:', cloudPaymentMethods.length
-      );
     } catch (error) {
-      console.error('[PaymentMethods] Erreur lors de la synchronisation depuis le cloud:', error);
+      console.error('[PaymentMethods] Erreur synchronisation cloud:', error);
     }
   }
 
   private async upsertLocal(paymentMethod: PaymentMethod): Promise<void> {
-    await invokeOrFallback(
-      'upsert_payment_method',
-      { paymentMethod },
-      async () => {
-        const { getDb } = await import('./db-web');
-        const db = await getDb();
-        // Vérifier que le store existe avant d'accéder
-        if (!db.objectStoreNames.contains('payment_methods')) {
-          console.warn('[PaymentMethods] Store payment_methods non trouvé, impossible de sauvegarder');
-          return;
-        }
-        await db.put('payment_methods', paymentMethod);
-      }
-    );
+    await tauriInvoke('upsert_payment_method', { paymentMethod });
   }
 
   async createPaymentMethod(paymentMethod: PaymentMethod): Promise<PaymentMethod> {
@@ -166,20 +105,7 @@ class PaymentMethodsService {
   }
 
   async updatePaymentMethod(id: string, updates: Partial<PaymentMethod>): Promise<void> {
-    const existing = await invokeOrFallback(
-      'get_payment_method_by_id',
-      { id },
-      async () => {
-        const { getDb } = await import('./db-web');
-        const db = await getDb();
-        // Vérifier que le store existe avant d'accéder
-        if (!db.objectStoreNames.contains('payment_methods')) {
-          return undefined;
-        }
-        return await db.get('payment_methods', id);
-      }
-    );
-
+    const existing = await tauriInvoke<PaymentMethod | null>('get_payment_method_by_id', { id });
     if (existing) {
       const updated = { ...existing, ...updates, updated_at: new Date().toISOString() };
       await this.upsertLocal(updated);
@@ -187,31 +113,16 @@ class PaymentMethodsService {
   }
 
   async deletePaymentMethod(id: string): Promise<void> {
-    await invokeOrFallback(
-      'delete_payment_method',
-      { id },
-      async () => {
-        const { getDb } = await import('./db-web');
-        const db = await getDb();
-        // Vérifier que le store existe avant d'accéder
-        if (!db.objectStoreNames.contains('payment_methods')) {
-          return;
-        }
-        await db.delete('payment_methods', id);
-      }
-    );
+    await tauriInvoke('delete_payment_method', { id });
   }
 
   async setDefaultPaymentMethod(userId: string, id: string): Promise<void> {
-    // Désactiver tous les autres moyens de paiement par défaut
     const allMethods = await this.getPaymentMethods(userId);
     for (const pm of allMethods) {
       if (pm.id !== id && pm.is_default) {
         await this.updatePaymentMethod(pm.id, { is_default: false });
       }
     }
-
-    // Définir celui-ci comme par défaut
     await this.updatePaymentMethod(id, { is_default: true });
   }
 }

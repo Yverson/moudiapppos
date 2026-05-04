@@ -226,6 +226,12 @@ pub struct SessionWithProducts {
     pub total_articles: i32,
 }
 
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct SyncStatus {
+    pub table_name: String,
+    pub updated_at: String,
+}
+
 pub struct Database {
     pool: Arc<SqlitePool>,
 }
@@ -617,7 +623,6 @@ impl Database {
         Ok(items)
     }
 
-    #[allow(dead_code)]
     pub async fn update_sync_queue_status(&self, item_id: &str, status: &str, error_message: Option<&str>) -> Result<(), sqlx::Error> {
         let now = Utc::now().to_rfc3339();
         let query = if status == "synced" {
@@ -1101,6 +1106,7 @@ pub async fn get_pending_sync_items(db: State<'_, Arc<Database>>) -> Result<Vec<
 
 #[tauri::command]
 pub async fn sync_pending_orders(db: State<'_, Arc<Database>>, restaurant_id: String, api_url: String) -> Result<serde_json::Value, String> {
+    println!("RUST_SYNC_START | restaurant_id: {}, api_url: {} | Début de la synchronisation Desktop", restaurant_id, api_url);
     // Get pending orders
     let pending_orders = db.get_pending_orders(&restaurant_id).await.map_err(|e| e.to_string())?;
     
@@ -1300,19 +1306,23 @@ impl Database {
 
         if let Some(session) = session {
             // Récupérer les produits vendus dans cette session
+            // Note: les items sont stockés dans le champ JSON `items` de orders,
+            // pas dans la table order_items qui n'est pas utilisée par l'app.
             let products = sqlx::query_as::<_, SessionProduct>(
                 r#"
-                SELECT 
-                    mi.name as nom_plat,
-                    COUNT(oi.id) as quantite,
-                    AVG(oi.unit_price) as prix_unitaire_moyen,
-                    SUM(oi.total_price) as montant_total
-                FROM orders o
-                JOIN order_items oi ON o.id = oi.order_id
-                JOIN menu_items mi ON oi.menu_item_id = mi.id
+                SELECT
+                    COALESCE(json_extract(items.value, '$.name'), 'Produit') as nom_plat,
+                    SUM(CAST(json_extract(items.value, '$.quantity') AS INTEGER)) as quantite,
+                    AVG(CAST(COALESCE(json_extract(items.value, '$.unit_price'), json_extract(items.value, '$.price')) AS REAL)) as prix_unitaire_moyen,
+                    SUM(CAST(COALESCE(json_extract(items.value, '$.total_price'),
+                        CAST(json_extract(items.value, '$.unit_price') AS REAL) * CAST(json_extract(items.value, '$.quantity') AS INTEGER),
+                        CAST(json_extract(items.value, '$.price') AS REAL) * CAST(json_extract(items.value, '$.quantity') AS INTEGER)
+                    ) AS REAL)) as montant_total
+                FROM orders o,
+                json_each(CASE WHEN o.items IS NOT NULL AND o.items != '' THEN o.items ELSE '[]' END) AS items
                 WHERE o.session_id = ?1
                   AND o.payment_status = 'paid'
-                GROUP BY mi.id, mi.name
+                GROUP BY nom_plat
                 ORDER BY montant_total DESC
                 "#
             )
@@ -1415,7 +1425,83 @@ impl Database {
             .await?;
         Ok(())
     }
+    pub async fn get_table_count(&self, table_name: &str) -> Result<i64, sqlx::Error> {
+        let query = format!("SELECT COUNT(*) as count FROM {}", table_name);
+        let row: (i64,) = sqlx::query_as(&query)
+            .fetch_one(&*self.pool)
+            .await?;
+        Ok(row.0)
+    }
+
+    pub async fn get_all_payments(&self, restaurant_id: &str) -> Result<Vec<Payment>, sqlx::Error> {
+        let payments = sqlx::query_as::<_, Payment>(
+            "SELECT p.* FROM payments p JOIN orders o ON p.order_id = o.id WHERE o.restaurant_id = ?1 ORDER BY p.created_at DESC"
+        )
+        .bind(restaurant_id)
+        .fetch_all(&*self.pool)
+        .await?;
+        Ok(payments)
+    }
+
+    pub async fn get_all_cash_movements(&self, restaurant_id: &str) -> Result<Vec<CashMovement>, sqlx::Error> {
+        let movements = sqlx::query_as::<_, CashMovement>(
+            "SELECT m.* FROM cash_movements m JOIN cash_sessions s ON m.cash_session_id = s.id WHERE s.restaurant_id = ?1 ORDER BY m.created_at DESC"
+        )
+        .bind(restaurant_id)
+        .fetch_all(&*self.pool)
+        .await?;
+        Ok(movements)
+    }
+
+    pub async fn get_all_sync_items(&self) -> Result<Vec<SyncQueue>, sqlx::Error> {
+        let items = sqlx::query_as::<_, SyncQueue>(
+            "SELECT * FROM sync_queue ORDER BY created_at DESC"
+        )
+        .fetch_all(&*self.pool)
+        .await?;
+        Ok(items)
+    }
+
+    pub async fn get_all_sync_statuses(&self) -> Result<Vec<SyncStatus>, sqlx::Error> {
+        let statuses = sqlx::query_as::<_, SyncStatus>(
+            "SELECT table_name, updated_at FROM sync_status"
+        )
+        .fetch_all(&*self.pool)
+        .await?;
+        Ok(statuses)
+    }
+
+    pub async fn delete_order(&self, id: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM orders WHERE id = ?").bind(id).execute(&*self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn delete_cash_session(&self, id: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM cash_sessions WHERE id = ?").bind(id).execute(&*self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn delete_payment(&self, id: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM payments WHERE id = ?").bind(id).execute(&*self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn delete_cash_movement(&self, id: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM cash_movements WHERE id = ?").bind(id).execute(&*self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn delete_sync_queue_item(&self, id: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM sync_queue WHERE id = ?").bind(id).execute(&*self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn clear_sync_queue(&self) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM sync_queue").execute(&*self.pool).await?;
+        Ok(())
+    }
 }
+
 
 // Tauri commands for Livreurs
 #[tauri::command]
@@ -1518,3 +1604,78 @@ pub async fn clear_all_orders(db: State<'_, Arc<Database>>) -> Result<usize, Str
     
     Ok(result.rows_affected() as usize)
 }
+
+#[tauri::command]
+pub async fn get_table_count(
+    db: State<'_, Arc<Database>>,
+    table_name: String,
+) -> Result<i64, String> {
+    // Whitelist tables to prevent SQL injection
+    let allowed_tables = [
+        "categories", "menu_items", "customers", "livreurs", "staff", 
+        "orders", "sync_queue", "cash_sessions", "payments", 
+        "cash_movements", "sync_status"
+    ];
+    
+    if !allowed_tables.contains(&table_name.as_str()) {
+        return Err(format!("Table non autorisée: {}", table_name));
+    }
+
+    db.get_table_count(&table_name).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_all_payments(db: State<'_, Arc<Database>>, restaurant_id: String) -> Result<Vec<Payment>, String> {
+    db.get_all_payments(&restaurant_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_all_cash_movements(db: State<'_, Arc<Database>>, restaurant_id: String) -> Result<Vec<CashMovement>, String> {
+    db.get_all_cash_movements(&restaurant_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_all_sync_items(db: State<'_, Arc<Database>>) -> Result<Vec<SyncQueue>, String> {
+    db.get_all_sync_items().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_all_sync_statuses(db: State<'_, Arc<Database>>) -> Result<Vec<SyncStatus>, String> {
+    db.get_all_sync_statuses().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_order(db: State<'_, Arc<Database>>, id: String) -> Result<(), String> {
+    db.delete_order(&id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_cash_session(db: State<'_, Arc<Database>>, id: String) -> Result<(), String> {
+    db.delete_cash_session(&id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_payment(db: State<'_, Arc<Database>>, id: String) -> Result<(), String> {
+    db.delete_payment(&id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_cash_movement(db: State<'_, Arc<Database>>, id: String) -> Result<(), String> {
+    db.delete_cash_movement(&id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_sync_queue_item(db: State<'_, Arc<Database>>, id: String) -> Result<(), String> {
+    db.delete_sync_queue_item(&id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_sync_queue_item_status(db: State<'_, Arc<Database>>, item_id: String, status: String, error_message: Option<String>) -> Result<(), String> {
+    db.update_sync_queue_status(&item_id, &status, error_message.as_deref()).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn clear_all_sync_queue(db: State<'_, Arc<Database>>) -> Result<(), String> {
+    db.clear_sync_queue().await.map_err(|e| e.to_string())
+}
+

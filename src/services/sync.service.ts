@@ -154,7 +154,17 @@ class SyncService {
     console.log('[SyncService] Token d\'authentification supprimé');
   }
 
-  async syncAll(options: SyncOptions = {}): Promise<SyncResult> {
+  async syncAll(options: SyncOptions = {}, apiUrl?: string): Promise<SyncResult> {
+    if (apiUrl) {
+      this.baseURL = apiUrl;
+      this.api.defaults.baseURL = apiUrl;
+      try {
+        const { setSessionApiBaseUrl } = await import('./local-session.service');
+        setSessionApiBaseUrl(apiUrl);
+      } catch (e) {
+        // Ignorer si la fonction n'est pas encore ajoutée
+      }
+    }
     const result: SyncResult = {
       success: true,
       message: "Synchronisation réussie",
@@ -163,6 +173,7 @@ class SyncService {
         menuItems: { synced: 0, errors: [] },
         customers: { synced: 0, errors: [] },
         livreurs: { synced: 0, errors: [] },
+        sessions: { synced: 0, errors: [] },
         orders: { synced: 0, errors: [] },
       },
       timestamp: new Date().toISOString(),
@@ -329,6 +340,32 @@ class SyncService {
           );
           result.success = false;
         }
+      }
+
+      // Sync Sessions (IMPORTANT: Sync sessions BEFORE orders to avoid FK conflicts)
+      try {
+        const { syncPendingSessions, setSessionApiBaseUrl } = await import('./local-session.service');
+        
+        if (apiUrl) {
+          setSessionApiBaseUrl(apiUrl);
+        }
+
+        console.log('[Sync] Vérification des sessions locales en attente...');
+        const sessionResult = await syncPendingSessions();
+        
+        result.details.sessions = { 
+          synced: sessionResult.synced, 
+          errors: sessionResult.errors > 0 ? [`${sessionResult.errors} sessions en erreur`] : [] 
+        };
+        
+        if (sessionResult.synced > 0 || sessionResult.errors > 0) {
+          console.log(`[Sync] Résultat sessions: ${sessionResult.synced} synchronisées, ${sessionResult.errors} erreurs`);
+        } else {
+          console.log('[Sync] Aucune session en attente de synchronisation.');
+        }
+      } catch (error) {
+        console.error('[Sync] Erreur critique lors de la synchronisation des sessions:', error);
+        result.details.sessions.errors.push(error instanceof Error ? error.message : "Erreur inconnue");
       }
 
       // Sync Orders (Push local orders to cloud)
@@ -620,20 +657,29 @@ class SyncService {
       // Importer le service offline-order
       const offlineOrderService = (await import('./offline-order.service')).default;
       
+      // Récupérer TOUTES les commandes locales pour diagnostic
+      const allOrders = await offlineOrderService.getOrders(restaurantId);
+      console.log(`[Sync] Diagnostic COMPLET (${allOrders.length} commandes locales):`);
+      allOrders.forEach(o => {
+        console.log(`  - Commande ${o.id}: Status=${o.status}, Sync=${o.sync_status}, SyncedAt=${o.synced_at || 'JAMAIS'}`);
+      });
+
       // Récupérer les commandes en attente de synchronisation
-      const allPendingOrders = await offlineOrderService.getPendingOrders(restaurantId);
-      
-      // Filtrer pour ne garder que les commandes jamais synchronisées (sans synced_at)
-      const pendingOrders = allPendingOrders.filter(order => 
-        !order.synced_at && order.sync_status === 'pending'
+      // On prend tout ce qui n'est pas explicitement 'synced' et qui n'a pas de date de synchro
+      const pendingOrders = allOrders.filter(order => 
+        order.sync_status !== 'synced' && !order.synced_at
       );
       
+      console.log(`[Sync] Diagnostic Commandes à envoyer: ${pendingOrders.length}`, {
+        details: pendingOrders.map(o => ({ id: o.id, sync_status: o.sync_status }))
+      });
+      
       if (pendingOrders.length === 0) {
-        console.log('[Sync] Aucune commande en attente de synchronisation');
+        console.log('[Sync] Aucune commande éligible à la synchronisation trouvée');
         return result;
       }
 
-      console.log(`[Sync] ${pendingOrders.length} nouvelles commandes à synchroniser (${allPendingOrders.length} total pending)`);
+      console.log(`[Sync] ${pendingOrders.length} nouvelles commandes à synchroniser`);
 
       // Transformer les commandes au format backend
       const ordersToSync = pendingOrders.map(order => {
@@ -668,16 +714,95 @@ class SyncService {
         };
       });
 
-      // Envoyer vers l'API
-      const response = await this.api.post(
-        `/api/restaurants/${restaurantId}/orders/sync`,
-        { Orders: ordersToSync }
-      );
-
-      console.log('[Sync] Réponse brute du serveur:', response.data);
+      // Récupérer les sessions liées à ces commandes pour les inclure dans le payload
+      const sessionIdsInOrders = [...new Set(ordersToSync.map(o => o.SessionId).filter(id => id))] as string[];
+      let sessionsToSync: any[] = [];
       
-      if (response.data.Success || response.data.success) {
-        const syncResponse = response.data;
+      if (sessionIdsInOrders.length > 0) {
+        try {
+          const { getLocalSessionById } = await import('./local-session.service');
+          
+          for (const sid of sessionIdsInOrders) {
+            const session = await getLocalSessionById(sid);
+            if (session) {
+              sessionsToSync.push({
+                Id: session.id,
+                Type: session.type,
+                DateOuverture: session.date_ouverture,
+                DateFermeture: session.date_fermeture,
+                EstOuverte: session.est_ouverte,
+                CaTotal: session.ca_total,
+                NombreCommandes: session.nombre_commandes,
+                Notes: session.notes
+              });
+            } else {
+              console.warn(`[Sync] Session ${sid} non trouvée localement pour inclusion dans le payload`);
+            }
+          }
+            
+          console.log(`[Sync] ${sessionsToSync.length} sessions incluses dans le payload de synchronisation`);
+        } catch (sessionErr) {
+          console.warn("[Sync] Impossible d'inclure les sessions dans le payload:", sessionErr);
+        }
+      }
+
+      // Envoyer vers l'API
+      const sendOrders = async () => {
+        return await this.api.post(
+          `/api/restaurants/${restaurantId}/orders/sync`,
+          { 
+            Orders: ordersToSync,
+            Sessions: sessionsToSync
+          }
+        );
+      };
+
+      let response = await sendOrders();
+
+      // Logique de récupération automatique (Auto-healing)
+      // Si l'API indique un problème de clé étrangère avec les sessions
+      const responseData = response.data || {};
+      const results = responseData.Results || responseData.results || [];
+      const globalMessage = responseData.Message || responseData.message || "";
+      
+      const isFKError = globalMessage.includes("FK_Commandes_Sessions") || 
+                        globalMessage.includes("Sessions") ||
+                        results.some((r: any) => (r.Message || r.message || "").includes("Sessions"));
+
+      if (isFKError) {
+        console.warn("[Sync] ⚠️ Erreur de session détectée sur le serveur. Tentative de récupération automatique...");
+        
+        // 1. Identifier tous les SessionId uniques utilisés dans ces commandes
+        const sessionIds = [...new Set(ordersToSync.map(o => o.SessionId).filter(id => id))] as string[];
+        
+        if (sessionIds.length > 0) {
+          console.log(`[Sync] Récupération et synchronisation forcée de ${sessionIds.length} sessions:`, sessionIds);
+          
+          try {
+            const { syncSessionById } = await import('./local-session.service');
+            let sessionsRecovered = 0;
+            
+            for (const sid of sessionIds) {
+              const success = await syncSessionById(sid);
+              if (success) sessionsRecovered++;
+            }
+            
+            if (sessionsRecovered > 0) {
+              console.log(`[Sync] 🛡️ ${sessionsRecovered} sessions ont été synchronisées. Nouvelle tentative d'envoi des commandes...`);
+              // 2. Retenter l'envoi des commandes
+              response = await sendOrders();
+            }
+          } catch (recoveryErr) {
+            console.error("[Sync] Échec de la récupération automatique des sessions:", recoveryErr);
+          }
+        }
+      }
+
+      console.log('[Sync] Réponse finale du serveur:', response.data);
+      
+      const finalResponseData = response.data || {};
+      if (finalResponseData.Success || finalResponseData.success) {
+        const syncResponse = finalResponseData;
         console.log('[Sync] ✅ Réponse du serveur (succès):', JSON.stringify(syncResponse, null, 2));
         
         // Mettre à jour le statut de synchronisation pour chaque commande

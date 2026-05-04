@@ -1,18 +1,43 @@
 /**
  * Service de gestion financière (sessions de caisse, transactions, mouvements)
+ * Utilise exclusivement SQLite via Tauri.
  */
 
-import { invokeOrFallback } from './platform';
-import {
-  web_get_open_cash_session,
-  web_open_cash_session,
-  web_close_cash_session,
-  web_get_order_payments,
-  CashSession,
-  Payment,
-} from './db-web';
+import { tauriInvoke } from './platform';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
+
+export interface CashSession {
+  id: string;
+  restaurant_id: string;
+  type: 'X' | 'Z';
+  date_ouverture: string;
+  date_fermeture?: string | null;
+  est_ouverte: boolean;
+  ca_total: number;
+  nombre_commandes: number;
+  notes?: string;
+  sync_status: 'pending' | 'synced' | 'error';
+  sync_error?: string;
+  synced_at?: string;
+  date_creation: string;
+  date_modification?: string | null;
+}
+
+export interface Payment {
+  id: string;
+  order_id: string;
+  cash_session_id?: string;
+  method: string;
+  amount: number;
+  tendered?: number;
+  change?: number;
+  status: string;
+  transaction_id?: string;
+  metadata?: string;
+  created_at: string;
+  updated_at?: string;
+}
 
 export interface CashMovement {
   id: string;
@@ -49,17 +74,13 @@ export interface CashDrawerSummary {
 export async function getOpenCashSession(
   restaurantId: string
 ): Promise<CashSession | null> {
-  return invokeOrFallback(
-    'get_open_cash_session',
-    { restaurant_id: restaurantId },
-    () => web_get_open_cash_session(restaurantId)
-  );
+  return tauriInvoke<CashSession | null>('get_open_cash_session', { restaurant_id: restaurantId });
 }
 
 export async function openCashSession(
   restaurantId: string,
-  openingBalance: number,
-  openedBy?: string,
+  _openingBalance: number,
+  _openedBy?: string,
   sessionType: 'X' | 'Z' = 'X'
 ): Promise<CashSession> {
   const now = new Date().toISOString();
@@ -77,11 +98,7 @@ export async function openCashSession(
     date_modification: now,
   };
 
-  return invokeOrFallback(
-    'open_cash_session',
-    { session },
-    () => web_open_cash_session(session)
-  );
+  return tauriInvoke<CashSession>('open_cash_session', { session });
 }
 
 export async function closeCashSession(
@@ -91,18 +108,14 @@ export async function closeCashSession(
   notes?: string
 ): Promise<CashSession> {
   const now = new Date().toISOString();
-  
-  return invokeOrFallback(
-    'close_cash_session',
-    {
-      session_id: sessionId,
-      closed_by: closedBy,
-      closing_amount: closingBalance,
-      closed_at: now,
-      notes,
-    },
-    () => web_close_cash_session(sessionId, closingBalance)
-  );
+
+  return tauriInvoke<CashSession>('close_cash_session', {
+    sessionId,
+    closedBy: closedBy || null,
+    closingAmount: closingBalance,
+    closedAt: now,
+    notes: notes || null,
+  });
 }
 
 // ─── Cash Movements ─────────────────────────────────────────────────────────
@@ -125,13 +138,8 @@ export async function addCashMovement(
     created_at: now,
   };
 
-  const result = await invokeOrFallback(
-    'add_cash_movement',
-    { movement },
-    () => web_add_cash_movement(movement)
-  );
+  const result = await tauriInvoke<CashMovement>('add_cash_movement', { movement });
 
-  // Synchronisation bidirectionnelle
   const bidirectionalSync = (await import('./bidirectional-sync.service')).default;
   await bidirectionalSync.pushMutation({
     action: 'CREATE',
@@ -146,11 +154,7 @@ export async function addCashMovement(
 export async function getCashMovements(
   cashSessionId: string
 ): Promise<CashMovement[]> {
-  return invokeOrFallback(
-    'get_cash_movements',
-    { cash_session_id: cashSessionId },
-    () => web_get_cash_movements(cashSessionId)
-  );
+  return tauriInvoke<CashMovement[]>('get_cash_movements', { cashSessionId });
 }
 
 // ─── Finance Summary ────────────────────────────────────────────────────────
@@ -159,15 +163,10 @@ export async function getCashDrawerSummary(
   restaurantId: string,
   sessionId?: string
 ): Promise<CashDrawerSummary> {
-  // Récupérer la session (ouverte ou spécifique)
   let session: CashSession | null = null;
-  
+
   if (sessionId) {
-    session = await invokeOrFallback(
-      'get_cash_session_by_id',
-      { session_id: sessionId },
-      () => web_get_cash_session_by_id(sessionId)
-    );
+    session = await tauriInvoke<CashSession | null>('get_cash_session_by_id', { sessionId });
   } else {
     session = await getOpenCashSession(restaurantId);
   }
@@ -182,29 +181,18 @@ export async function getCashDrawerSummary(
     };
   }
 
-  // Récupérer les paiements de cette session
-  const payments: Payment[] = await invokeOrFallback(
-    'get_session_payments',
-    { cash_session_id: session.id },
-    () => web_get_session_payments(session.id)
-  );
-
-  // Récupérer les mouvements de caisse
+  const payments: Payment[] = await tauriInvoke<Payment[]>('get_session_payments', { cashSessionId: session.id });
   const movements = await getCashMovements(session.id);
 
-  // Calculer les totaux
   let totalCashIn = 0;
   let totalCashOut = 0;
   const transactions: FinanceTransaction[] = [];
 
-  // Ajouter les paiements
   for (const payment of payments) {
     totalCashIn += payment.amount;
     transactions.push({
       date: new Date(payment.created_at).toLocaleDateString('fr-FR', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
+        month: 'short', day: 'numeric', year: 'numeric',
       }),
       description: `Paiement ${payment.method}`,
       detail: `Commande #${payment.order_id.substring(0, 8)}`,
@@ -216,19 +204,15 @@ export async function getCashDrawerSummary(
     });
   }
 
-  // Ajouter les mouvements
   for (const movement of movements) {
     if (movement.type === 'in') {
       totalCashIn += movement.amount;
     } else {
       totalCashOut += movement.amount;
     }
-
     transactions.push({
       date: new Date(movement.created_at).toLocaleDateString('fr-FR', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
+        month: 'short', day: 'numeric', year: 'numeric',
       }),
       description: movement.reason || `Mouvement ${movement.type === 'in' ? 'entrant' : 'sortant'}`,
       detail: movement.category || 'Divers',
@@ -240,7 +224,6 @@ export async function getCashDrawerSummary(
     });
   }
 
-  // Trier par date (plus récent en premier)
   transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const openingBalance = 0;
@@ -254,37 +237,4 @@ export async function getCashDrawerSummary(
     transactions,
     session,
   };
-}
-
-// ─── Fonctions web (fallback IndexedDB) ────────────────────────────────────
-
-async function web_add_cash_movement(movement: CashMovement): Promise<CashMovement> {
-  const { getDb } = await import('./db-web');
-  const db = await getDb();
-  await db.put('cash_movements', movement);
-  return movement;
-}
-
-async function web_get_cash_movements(cashSessionId: string): Promise<CashMovement[]> {
-  const { getDb } = await import('./db-web');
-  const db = await getDb();
-  
-  if (!db.objectStoreNames.contains('cash_movements')) {
-    return [];
-  }
-  
-  const all = await db.getAllFromIndex('cash_movements', 'cash_session_id', cashSessionId);
-  return all;
-}
-
-async function web_get_cash_session_by_id(sessionId: string): Promise<CashSession | null> {
-  const { getDb } = await import('./db-web');
-  const db = await getDb();
-  return (await db.get('cash_sessions', sessionId)) || null;
-}
-
-async function web_get_session_payments(cashSessionId: string): Promise<Payment[]> {
-  const { getDb } = await import('./db-web');
-  const db = await getDb();
-  return db.getAllFromIndex('payments', 'cash_session_id', cashSessionId);
 }

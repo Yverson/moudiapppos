@@ -62,6 +62,18 @@ async fn main() {
             // Clear orders commands
             database::clear_orders,
             database::clear_all_orders,
+            database::get_table_count,
+            database::get_all_payments,
+            database::get_all_cash_movements,
+            database::get_all_sync_items,
+            database::get_all_sync_statuses,
+            database::delete_order,
+            database::delete_cash_session,
+            database::delete_payment,
+            database::delete_cash_movement,
+            database::delete_sync_queue_item,
+            database::update_sync_queue_item_status,
+            database::clear_all_sync_queue,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

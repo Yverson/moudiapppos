@@ -149,10 +149,19 @@ export function useSyncOrders() {
   const syncOrders = async (restaurantId: string, apiUrl: string) => {
     setIsSyncing(true);
     setError(null);
+    console.log('SYNC_ORDERS_TRIGGERED', { restaurantId, apiUrl }, 'Déclenchement de la synchronisation des commandes');
     
     try {
-      const offlineOrderService = (await import('../services/offline-order.service')).default;
-      const result = await offlineOrderService.syncPendingOrders(restaurantId, apiUrl);
+      const syncService = (await import('../services/sync.service')).default;
+      
+      // Utiliser SyncService au lieu de offlineOrderService pour bénéficier de l'auth et de l'API bulk
+      const result = await syncService.syncAll({ 
+        categories: false, 
+        menuItems: false, 
+        customers: false, 
+        livreurs: false, 
+        orders: true 
+      }, apiUrl);
       
       setSyncResult(result);
       await refreshOrders();

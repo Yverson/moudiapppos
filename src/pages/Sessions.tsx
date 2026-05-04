@@ -1,7 +1,8 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import SettingsLayout from '../layouts/SettingsLayout';
 import { invoke } from '@tauri-apps/api';
-import { useActiveRestaurant } from '../services/restaurant-config';
+import { useSyncOrders } from '../hooks/useDatabase';
+import { getActiveRestaurantId, useActiveRestaurant } from '../services/restaurant-config';
 import { createLocalSession, closeLocalSession } from '../services/local-session.service';
 
 interface Session {
@@ -83,6 +84,9 @@ function normalizeSession(raw: RawSession): Session {
 
 export default function Sessions() {
   const activeRestaurant = useActiveRestaurant();
+  const activeRestaurantId = getActiveRestaurantId();
+  const { syncOrders } = useSyncOrders();
+  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSession, setSelectedSession] = useState<SessionWithProducts | null>(null);
   const [loading, setLoading] = useState(true);
@@ -213,6 +217,14 @@ export default function Sessions() {
       setShowCreateModal(false);
       setCreateForm({ sessionType: 'X', openingBalance: 0, notes: '' });
       await loadSessions();
+
+      // Synchronisation automatique vers le cloud
+      console.log('SESSIONS_SYNC_START', { activeRestaurantId, apiUrl }, 'Appel de la synchronisation automatique après ouverture de session');
+      try {
+        await syncOrders(activeRestaurantId || '', apiUrl);
+      } catch (syncErr) {
+        console.warn('Échec de la synchronisation automatique après création de session:', syncErr);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de la crÃ©ation');
       console.error(err);

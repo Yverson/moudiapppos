@@ -1,23 +1,28 @@
 /**
- * Service de synchronisation bidirectionnelle offline/online.
- * - Détecte la connectivité réseau (navigator.onLine + events)
- * - Pousse les mutations CRUD vers l'API cloud immédiatement si online
- * - Si offline → stocke dans la sync_queue (IndexedDB/SQLite)
- * - Au retour d'internet → vide automatiquement la queue
+ * Service de synchronisation bidirectionnelle offline/online (SQLite uniquement).
  */
 
 import axios, { AxiosInstance } from 'axios';
-import { invokeOrFallback } from './platform';
-import {
-  web_add_to_sync_queue,
-  web_get_pending_sync_items,
-  getDb,
-  SyncQueue,
-} from './db-web';
+import { tauriInvoke } from './platform';
 import { getActiveRestaurantId } from './restaurant-config';
 
 export type EntityType = 'category' | 'menu_item' | 'customer' | 'livreur' | 'staff' | 'cash_movement' | 'payment_method' | 'cash_session';
 export type MutationAction = 'CREATE' | 'UPDATE' | 'DELETE';
+
+export interface SyncQueue {
+  id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  data: string;
+  retries: number;
+  max_retries: number;
+  last_attempt?: string;
+  status: string;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface PendingMutation {
   action: MutationAction;
@@ -64,11 +69,9 @@ class BidirectionalSyncService {
       return config;
     });
 
-    // Écouter les changements de connectivité
     window.addEventListener('online', this.handleOnline);
     window.addEventListener('offline', this.handleOffline);
 
-    // Charger le compte initial des items en attente
     this.refreshPendingCount();
   }
 
@@ -87,27 +90,15 @@ class BidirectionalSyncService {
   }
 
   private handleOnline = async () => {
-    console.log(
-      '═══ [BidirectionalSync] ═══\n',
-      'event:', 'online',
-      '\nDescription: Connexion rétablie — flush de la queue en cours'
-    );
     this._isOnline = true;
     this.notifyListeners();
     await this.flushQueue();
   };
 
   private handleOffline = () => {
-    console.log(
-      '═══ [BidirectionalSync] ═══\n',
-      'event:', 'offline',
-      '\nDescription: Connexion perdue — les mutations seront mises en file d\'attente'
-    );
     this._isOnline = false;
     this.notifyListeners();
   };
-
-  // ─── Abonnement aux changements d'état ──────────────────────────────────
 
   subscribe(listener: (isOnline: boolean, pendingCount: number, pendingTables: PendingTableInfo[]) => void): () => void {
     this.listeners.push(listener);
@@ -135,31 +126,16 @@ class BidirectionalSyncService {
 
   // ─── Push d'une mutation ─────────────────────────────────────────────────
 
-  /**
-   * Point d'entrée principal : appelé après chaque CRUD local.
-   * Si online → push immédiat vers l'API.
-   * Si offline → enqueue dans sync_queue.
-   */
   async pushMutation(mutation: PendingMutation): Promise<void> {
     if (this._isOnline) {
       try {
         await this.executeMutation(mutation);
-        console.log(
-          '═══ [BidirectionalSync] ═══\n',
-          'mutation:', `${mutation.action} ${mutation.entityType} ${mutation.entityId}`,
-          '\nDescription: Mutation envoyée à l\'API avec succès'
-        );
         return;
       } catch (err) {
-        console.warn(
-          '═══ [BidirectionalSync] ═══\n',
-          'erreur:', err,
-          '\nDescription: Échec push API — mise en queue'
-        );
+        console.warn('[BidirectionalSync] Échec push API — mise en queue:', err);
       }
     }
 
-    // Offline ou échec → enqueue
     await this.enqueue(mutation);
     await this.refreshPendingCount();
     this.notifyListeners();
@@ -198,21 +174,13 @@ class BidirectionalSyncService {
         await this.executePaymentMethodMutation(action, entityId, data, restaurantId);
         break;
       case 'cash_session':
-        // Les sessions sont synchronisées directement par local-session.service
-        // Ce cas est géré pour éviter l'erreur mais ne fait rien ici
         break;
     }
   }
 
-  private async executeCategoryMutation(
-    action: MutationAction,
-    entityId: string,
-    data: any,
-    restaurantId: string
-  ): Promise<void> {
+  private async executeCategoryMutation(action: MutationAction, entityId: string, data: any, restaurantId: string): Promise<void> {
     switch (action) {
       case 'CREATE':
-        // MenusController attend { Id, Nom, Description }
         await this.api.post(`/api/restaurants/${restaurantId}/categories`, {
           Id: data.id || entityId,
           Nom: data.name || data.Nom || data.nom,
@@ -220,7 +188,6 @@ class BidirectionalSyncService {
         });
         break;
       case 'UPDATE':
-        // RestaurantSyncController accepte name/nom, description, order/OrdreTri, active
         await this.api.put(`/api/restaurants/${restaurantId}/categories/${entityId}`, {
           Name: data.name || data.Name,
           Nom: data.name || data.nom,
@@ -235,13 +202,7 @@ class BidirectionalSyncService {
     }
   }
 
-  private async executeMenuItemMutation(
-    action: MutationAction,
-    entityId: string,
-    data: any,
-    restaurantId: string
-  ): Promise<void> {
-    // Normaliser les champs pour MenusController
+  private async executeMenuItemMutation(action: MutationAction, entityId: string, data: any, restaurantId: string): Promise<void> {
     const platPayload = {
       Id: data.id || entityId,
       Nom: data.name || data.nom,
@@ -256,7 +217,6 @@ class BidirectionalSyncService {
     };
     switch (action) {
       case 'CREATE':
-        // Utiliser l'endpoint MenusController avec categoryId
         const categoryId = data.category_id || data.CategoryId;
         await this.api.post(`/api/categories/${categoryId}/dishes`, platPayload);
         break;
@@ -269,12 +229,7 @@ class BidirectionalSyncService {
     }
   }
 
-  private async executeCustomerMutation(
-    action: MutationAction,
-    entityId: string,
-    data: any,
-    restaurantId: string
-  ): Promise<void> {
+  private async executeCustomerMutation(action: MutationAction, entityId: string, data: any, restaurantId: string): Promise<void> {
     const clientPayload = {
       Id: data.id || data.Id || entityId,
       Email: data.email || data.Email,
@@ -297,12 +252,7 @@ class BidirectionalSyncService {
     }
   }
 
-  private async executeLivreurMutation(
-    action: MutationAction,
-    entityId: string,
-    data: any,
-    restaurantId: string
-  ): Promise<void> {
+  private async executeLivreurMutation(action: MutationAction, entityId: string, data: any, restaurantId: string): Promise<void> {
     const livreurPayload = {
       Id: data.id || data.Id || entityId,
       Email: data.email || data.Email,
@@ -325,12 +275,7 @@ class BidirectionalSyncService {
     }
   }
 
-  private async executeCashMovementMutation(
-    action: MutationAction,
-    entityId: string,
-    data: any,
-    restaurantId: string
-  ): Promise<void> {
+  private async executeCashMovementMutation(action: MutationAction, entityId: string, data: any, restaurantId: string): Promise<void> {
     const movementPayload = {
       Id: data.id || data.Id || entityId,
       CashSessionId: data.cash_session_id || data.CashSessionId,
@@ -352,12 +297,7 @@ class BidirectionalSyncService {
     }
   }
 
-  private async executeStaffMutation(
-    action: MutationAction,
-    entityId: string,
-    data: any,
-    restaurantId: string
-  ): Promise<void> {
+  private async executeStaffMutation(action: MutationAction, entityId: string, data: any, restaurantId: string): Promise<void> {
     const staffPayload = {
       Id: data.id || data.Id || entityId,
       RestaurantId: data.RestaurantId || restaurantId,
@@ -382,12 +322,7 @@ class BidirectionalSyncService {
     }
   }
 
-  private async executePaymentMethodMutation(
-    action: MutationAction,
-    entityId: string,
-    data: any,
-    restaurantId: string
-  ): Promise<void> {
+  private async executePaymentMethodMutation(action: MutationAction, entityId: string, data: any, restaurantId: string): Promise<void> {
     const userId = data.user_id || data.userId || data.UtilisateurId;
     const paymentMethodPayload = {
       Id: data.id || entityId,
@@ -431,35 +366,20 @@ class BidirectionalSyncService {
       updated_at: now,
     };
 
-    await invokeOrFallback(
-      'add_to_sync_queue',
-      { queueItem },
-      () => web_add_to_sync_queue(queueItem)
-    );
-
-    console.log(
-      '═══ [BidirectionalSync] ═══\n',
-      'enqueued:', `${mutation.action} ${mutation.entityType} ${mutation.entityId}`,
-      '\nDescription: Mutation mise en file d\'attente (offline)'
-    );
+    await tauriInvoke('add_to_sync_queue', { queueItem });
   }
 
   private async refreshPendingCount(): Promise<void> {
     try {
-      const items = await invokeOrFallback(
-        'get_pending_sync_items',
-        {},
-        () => web_get_pending_sync_items()
-      );
+      const items = await tauriInvoke<SyncQueue[]>('get_pending_sync_items', {});
       this._pendingCount = items.length;
-      
-      // Calculer les tables concernées
+
       const tableMap = new Map<EntityType, number>();
       items.forEach(item => {
         const type = item.entity_type as EntityType;
         tableMap.set(type, (tableMap.get(type) || 0) + 1);
       });
-      
+
       const labelMap: Record<EntityType, string> = {
         category: 'Catégories',
         menu_item: 'Plats',
@@ -470,7 +390,7 @@ class BidirectionalSyncService {
         payment_method: 'Moyens de paiement',
         cash_session: 'Sessions de caisse',
       };
-      
+
       this._pendingTables = Array.from(tableMap.entries()).map(([entityType, count]) => ({
         entityType,
         count,
@@ -484,10 +404,6 @@ class BidirectionalSyncService {
 
   // ─── Flush de la queue ───────────────────────────────────────────────────
 
-  /**
-   * Traite tous les items pending de la sync_queue.
-   * Appelé automatiquement au retour d'internet.
-   */
   async flushQueue(): Promise<FlushResult> {
     if (this.flushInProgress) {
       return { synced: 0, errors: 0, errorDetails: [] };
@@ -497,17 +413,7 @@ class BidirectionalSyncService {
     const result: FlushResult = { synced: 0, errors: 0, errorDetails: [] };
 
     try {
-      const pendingItems = await invokeOrFallback(
-        'get_pending_sync_items',
-        {},
-        () => web_get_pending_sync_items()
-      );
-
-      console.log(
-        '═══ [BidirectionalSync] ═══\n',
-        'pendingItems:', pendingItems.length,
-        '\nDescription: Début du flush de la queue'
-      );
+      const pendingItems = await tauriInvoke<SyncQueue[]>('get_pending_sync_items', {});
 
       for (const item of pendingItems) {
         try {
@@ -519,25 +425,18 @@ class BidirectionalSyncService {
             data,
           });
 
-          // Marquer comme synced dans la queue
-          await this.markQueueItemSynced(item.id);
+          await tauriInvoke('update_sync_queue_item_status', { itemId: item.id, status: 'synced', errorMessage: null });
           result.synced++;
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : 'Erreur inconnue';
           result.errors++;
           result.errorDetails.push(`${item.entity_type}/${item.entity_id}: ${errMsg}`);
-          await this.markQueueItemError(item.id, errMsg);
+          await tauriInvoke('update_sync_queue_item_status', { itemId: item.id, status: 'error', errorMessage: errMsg });
         }
       }
 
       await this.refreshPendingCount();
       this.notifyListeners();
-
-      console.log(
-        '═══ [BidirectionalSync] ═══\n',
-        'result:', result,
-        '\nDescription: Flush terminé'
-      );
     } finally {
       this.flushInProgress = false;
     }
@@ -545,52 +444,10 @@ class BidirectionalSyncService {
     return result;
   }
 
-  private async markQueueItemSynced(id: string): Promise<void> {
-    try {
-      const db = await getDb();
-      const item = await db.get('sync_queue', id);
-      if (item) {
-        await db.put('sync_queue', {
-          ...item,
-          status: 'synced',
-          updated_at: new Date().toISOString(),
-        });
-      }
-    } catch {
-      // Silencieux
-    }
-  }
-
-  private async markQueueItemError(id: string, errorMessage: string): Promise<void> {
-    try {
-      const db = await getDb();
-      const item = await db.get('sync_queue', id);
-      if (item) {
-        await db.put('sync_queue', {
-          ...item,
-          status: 'error',
-          error_message: errorMessage,
-          retries: (item.retries || 0) + 1,
-          last_attempt: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-      }
-    } catch {
-      // Silencieux
-    }
-  }
-
   // ─── Debug ───────────────────────────────────────────────────────────────
 
-  /**
-   * Affiche les détails de la queue de synchronisation (pour debug)
-   */
   async debugQueue(): Promise<void> {
-    const items = await invokeOrFallback(
-      'get_pending_sync_items',
-      {},
-      () => web_get_pending_sync_items()
-    );
+    const items = await tauriInvoke<SyncQueue[]>('get_pending_sync_items', {});
     console.log('═══ [BidirectionalSync] Queue Debug ═══');
     console.log('Pending items:', items.length);
     console.table(items);
@@ -598,20 +455,10 @@ class BidirectionalSyncService {
 
   async clearQueue(): Promise<void> {
     try {
-      await invokeOrFallback(
-        'clear_sync_queue',
-        {},
-        async () => {
-          const { getDb } = await import('./db-web');
-          const db = await getDb();
-          const tx = db.transaction('sync_queue', 'readwrite');
-          await tx.store.clear();
-          await tx.done;
-        }
-      );
+      await tauriInvoke('clear_all_sync_queue', {});
       await this.refreshPendingCount();
       this.notifyListeners();
-      console.log('═══ [BidirectionalSync] ═══\n', 'Queue vidée avec succès');
+      console.log('═══ [BidirectionalSync] Queue vidée avec succès');
     } catch (error) {
       console.error('Erreur lors du vidage de la queue:', error);
     }

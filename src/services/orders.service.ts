@@ -4,8 +4,7 @@
  */
 
 import axios from 'axios';
-import { invokeOrFallback } from './platform';
-import { web_get_orders, web_update_order_offline, Order as DbOrder } from './db-web';
+import { tauriInvoke } from './platform';
 import offlineOrderService from './offline-order.service';
 
 export interface Order {
@@ -207,15 +206,9 @@ class OrdersService {
   /**
    * Récupérer les commandes locales depuis IndexedDB/SQLite
    */
-  async getLocalOrders(restaurantId: string, filters?: OrderFilters): Promise<Order[]> {
+  async getLocalOrders(restaurantId: string, _filters?: OrderFilters): Promise<Order[]> {
     try {
-      const orders = await invokeOrFallback(
-        'get_orders',
-        { restaurantId, status: undefined },
-        () => web_get_orders(restaurantId)
-      );
-
-      return orders as Order[];
+      return await tauriInvoke<Order[]>('get_orders', { restaurantId, status: undefined });
     } catch (error) {
       console.error('Erreur récupération commandes locales:', error);
       return [];
@@ -260,7 +253,7 @@ class OrdersService {
    */
   private async updateLocalOrderStatus(order: Order, newStatus: OrderStatus): Promise<{ success: boolean; error?: string }> {
     try {
-      const updated: DbOrder = {
+      const updated: Order = {
         ...order,
         status: newStatus,
         updated_at: new Date().toISOString(),
@@ -272,11 +265,7 @@ class OrdersService {
         console.log('Commande locale marquée comme payée automatiquement lors de la livraison');
       }
 
-      await invokeOrFallback(
-        'update_order_offline',
-        { order: updated },
-        () => web_update_order_offline(updated)
-      );
+      await tauriInvoke('update_order_offline', { order: updated });
 
       // Ajouter à la queue de sync si pas déjà en erreur
       if (order.sync_status !== 'error') {
@@ -378,17 +367,16 @@ class OrdersService {
           updatedNotes = `${updatedNotes}|Livreur:${livreurName}`.replace(/^\|/, '');
         }
 
-        const updated: DbOrder = {
+        const updated: Order = {
           ...order,
           livreur_id: livreurId,
           notes: updatedNotes,
           updated_at: new Date().toISOString(),
         };
 
-        await invokeOrFallback(
+        await tauriInvoke(
           'update_order_offline',
-          { order: updated },
-          () => web_update_order_offline(updated)
+          { order: updated }
         );
 
         console.log('Commande locale mise à jour avec livreur:', { livreurId, livreurName, notes: updatedNotes });

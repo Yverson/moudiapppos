@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import PaymentModal from '../components/PaymentModal';
-import { useCategories, useMenuItems, useOrders } from '../hooks/useDatabase';
+import { useCategories, useMenuItems, useOrders, useSyncOrders } from '../hooks/useDatabase';
 import offlineOrderService, { Order as OfflineOrder } from '../services/offline-order.service';
 import livreurService, { Livreur } from '../services/livreur.service';
 import { formatAmount } from '../utils/format';
@@ -40,6 +40,8 @@ export default function POSTerminal() {
 
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const { syncOrders } = useSyncOrders();
+  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
   useEffect(() => {
     if (!activeCategoryId && categories.length > 0) {
@@ -352,6 +354,14 @@ export default function POSTerminal() {
   const refreshAllOrders = async () => {
     await refreshPendingOrders();
     await refreshDeliveryOrders();
+
+    // Synchronisation automatique vers le cloud
+    console.log('POSTERMINAL_SYNC_START', { restaurantId, apiUrl }, 'Appel de la synchronisation automatique depuis POSTerminal');
+    try {
+      await syncOrders(restaurantId, apiUrl);
+    } catch (syncErr) {
+      console.warn('Échec de la synchronisation automatique après enregistrement:', syncErr);
+    }
   };
 
   const startNewOrder = async () => {
@@ -694,6 +704,13 @@ export default function POSTerminal() {
             onPaymentSuccess={async () => {
               await startNewOrder();
               await refreshAllOrders();
+              // Note: PaymentModal lance déjà sa propre synchronisation
+              // Mais on peut en relancer une ici si nécessaire pour être sûr
+              try {
+                await syncOrders(restaurantId, apiUrl);
+              } catch (syncErr) {
+                console.warn('Échec de la synchronisation supplémentaire après paiement:', syncErr);
+              }
             }}
           />
         </div>

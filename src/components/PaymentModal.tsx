@@ -1,8 +1,24 @@
 import { useState, useEffect } from 'react';
-import { invokeOrFallback } from '../services/platform';
-import { web_complete_order_payment, CompletePaymentRequest } from '../services/db-web';
+import { tauriInvoke } from '../services/platform';
+import { useSyncOrders } from '../hooks/useDatabase';
 import { formatAmount } from '../utils/format';
 import { useActiveRestaurant } from '../services/restaurant-config';
+
+interface CompletePaymentRequest {
+  order_id: string;
+  restaurant_id: string;
+  cash_session_id: string | null;
+  payments: Array<{
+    method: string;
+    amount: number;
+    tendered: number | null;
+    change: number | null;
+    transaction_id: string | null;
+    metadata: string | null;
+  }>;
+  paid_at: string;
+  final_status: string | null;
+}
 
 /**
  * Payment Method Enum
@@ -82,6 +98,7 @@ export default function PaymentModal({
   const [loadingAction, setLoadingAction] = useState<PaymentAction | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [splitPayments, setSplitPayments] = useState<Array<{ method: PaymentMethod; amount: string }>>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const { id: restaurantId } = useActiveRestaurant();
   const loading = loadingAction !== null;
@@ -105,6 +122,28 @@ export default function PaymentModal({
       return () => clearTimeout(timer);
     }
   }, [message]);
+  const { syncOrders } = useSyncOrders();
+  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+  // Charger la session ouverte à l'ouverture du modal
+  useEffect(() => {
+    const loadSession = async () => {
+      try {
+        const { getOpenLocalSession } = await import('../services/local-session.service');
+        const openSession = await getOpenLocalSession(restaurantId);
+        if (openSession) {
+          setSessionId(openSession.id);
+          console.log('[PaymentModal] Session détectée:', openSession.id);
+        }
+      } catch (err) {
+        console.warn('[PaymentModal] Erreur récupération session:', err);
+      }
+    };
+
+    if (isOpen && restaurantId) {
+      loadSession();
+    }
+  }, [isOpen, restaurantId]);
 
   if (!isOpen) return null;
 
@@ -258,7 +297,7 @@ export default function PaymentModal({
       const tauriRequest = {
         order_id: paymentRequest.orderId,
         restaurant_id: paymentRequest.restaurantId,
-        cash_session_id: paymentRequest.cashSessionId ?? null,
+        cash_session_id: sessionId || paymentRequest.cashSessionId || null,
         payments: paymentRequest.payments.map(p => ({
           method: p.method,
           amount: p.amount,
@@ -271,10 +310,9 @@ export default function PaymentModal({
         final_status: action === 'deliver' ? 'delivered' : null,
       } satisfies CompletePaymentRequest;
 
-      const data: PaymentResponse = await invokeOrFallback(
+      const data: PaymentResponse = await tauriInvoke<PaymentResponse>(
         'complete_order_payment',
-        { request: tauriRequest },
-        () => web_complete_order_payment(tauriRequest)
+        { request: tauriRequest }
       );
 
       if (data.payment_status === 'paid') {
@@ -293,6 +331,14 @@ export default function PaymentModal({
         // Call success callback if provided
         if (onPaymentSuccess) {
           await onPaymentSuccess(data);
+        }
+
+        // Synchronisation automatique vers le cloud
+        console.log('PAYMENT_MODAL_SYNC_START', { restaurantId, apiUrl }, 'Appel de la synchronisation automatique depuis PaymentModal');
+        try {
+          await syncOrders(restaurantId, apiUrl);
+        } catch (syncErr) {
+          console.warn('Échec de la synchronisation automatique après paiement:', syncErr);
         }
 
         // Close modal after 2 seconds

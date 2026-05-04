@@ -1,13 +1,4 @@
-import { invokeOrFallback } from './platform';
-import {
-  web_create_order_offline,
-  web_update_order_offline,
-  web_get_orders,
-  web_get_pending_orders,
-  web_add_to_sync_queue,
-  web_get_pending_sync_items,
-  web_sync_pending_orders,
-} from './db-web';
+import { tauriInvoke } from './platform';
 
 // Types matching Rust structs
 export interface Order {
@@ -69,32 +60,33 @@ export interface SyncResult {
 class OfflineOrderService {
   // Order operations
   async createOrderOffline(order: Order): Promise<Order> {
-    return await invokeOrFallback('create_order_offline', { order }, () => web_create_order_offline(order));
+    return await tauriInvoke<Order>('create_order_offline', { order });
   }
 
   async updateOrderOffline(order: Order): Promise<Order> {
-    return await invokeOrFallback('update_order_offline', { order }, () => web_update_order_offline(order));
+    return await tauriInvoke<Order>('update_order_offline', { order });
   }
 
   async getOrders(restaurantId: string, status?: string): Promise<Order[]> {
-    return await invokeOrFallback('get_orders', { restaurantId, status }, () => web_get_orders(restaurantId, status));
+    return await tauriInvoke<Order[]>('get_orders', { restaurantId, status });
   }
 
   async getPendingOrders(restaurantId: string): Promise<Order[]> {
-    return await invokeOrFallback('get_pending_orders', { restaurantId }, () => web_get_pending_orders(restaurantId));
+    return await tauriInvoke<Order[]>('get_pending_orders', { restaurantId });
   }
 
   // Sync queue operations
   async addToSyncQueue(queueItem: SyncQueue): Promise<SyncQueue> {
-    return await invokeOrFallback('add_to_sync_queue', { queueItem }, () => web_add_to_sync_queue(queueItem));
+    return await tauriInvoke<SyncQueue>('add_to_sync_queue', { queueItem });
   }
 
   async getPendingSyncItems(): Promise<SyncQueue[]> {
-    return await invokeOrFallback('get_pending_sync_items', {}, () => web_get_pending_sync_items());
+    return await tauriInvoke<SyncQueue[]>('get_pending_sync_items', {});
   }
 
   async syncPendingOrders(restaurantId: string, apiUrl: string): Promise<SyncResult> {
-    return await invokeOrFallback('sync_pending_orders', { restaurantId, apiUrl }, () => web_sync_pending_orders(restaurantId, apiUrl));
+    console.log('OFFLINE_ORDER_SYNC', { restaurantId, apiUrl }, 'Appel de syncPendingOrders');
+    return await tauriInvoke<SyncResult>('sync_pending_orders', { restaurantId, apiUrl });
   }
 
   // Helper methods
@@ -115,8 +107,8 @@ class OfflineOrderService {
     // Récupérer la session ouverte pour ce restaurant
     let sessionId: string | undefined;
     try {
-      const { web_get_open_cash_session } = await import('./db-web');
-      const openSession = await web_get_open_cash_session(orderData.restaurantId);
+      const { getOpenLocalSession } = await import('./local-session.service');
+      const openSession = await getOpenLocalSession(orderData.restaurantId);
       if (openSession) {
         sessionId = openSession.id;
       }

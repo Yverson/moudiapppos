@@ -21,7 +21,6 @@ const TABLES_TO_CHECK: Omit<TableCount, 'count'>[] = [
   { name: 'cash_sessions', label: 'Sessions', description: 'Sessions de caisse' },
   { name: 'payments', label: 'Paiements', description: 'Historique des paiements' },
   { name: 'cash_movements', label: 'Mouvements', description: 'Mouvements de caisse' },
-  { name: 'payment_methods', label: 'Moyens Paiement', description: 'Cartes/paiements enregistrés' },
   { name: 'sync_status', label: 'Sync Status', description: 'État de synchronisation' },
 ];
 
@@ -59,49 +58,18 @@ export default function CheckLocalData() {
 
   const getTableCount = async (tableName: string): Promise<number> => {
     try {
-      let count = 0;
-      
-      switch (tableName) {
-        case 'categories':
-          count = await invoke<number>('get_categories_count');
-          break;
-        case 'menu_items':
-          count = await invoke<number>('get_menu_items_count');
-          break;
-        case 'customers':
-          count = await invoke<number>('get_customers_count');
-          break;
-        case 'livreurs':
-          count = await invoke<number>('get_livreurs_count');
-          break;
-        case 'staff':
-          count = await invoke<number>('get_staff_count');
-          break;
-        case 'orders':
-          count = await invoke<number>('get_orders_count');
-          break;
-        case 'sync_queue':
-          count = await invoke<number>('get_sync_queue_count');
-          break;
-        case 'cash_sessions':
-          count = await invoke<number>('get_cash_sessions_count');
-          break;
-        case 'payments':
-          count = await invoke<number>('get_payments_count');
-          break;
-        case 'cash_movements':
-          count = await invoke<number>('get_cash_movements_count');
-          break;
-        case 'payment_methods':
-          count = await invoke<number>('get_payment_methods_count');
-          break;
-        case 'sync_status':
-          count = await invoke<number>('get_sync_status_count');
-          break;
-        default:
-          count = 0;
+      // Liste des tables gérées par SQLite dans le backend
+      const sqliteTables = [
+        'categories', 'menu_items', 'customers', 'livreurs', 'staff', 
+        'orders', 'sync_queue', 'cash_sessions', 'payments', 
+        'cash_movements', 'sync_status'
+      ];
+
+      if (!sqliteTables.includes(tableName)) {
+        return 0;
       }
-      
+
+      const count = await invoke<number>('get_table_count', { tableName });
       return count;
     } catch (error) {
       console.error(`Erreur comptage table ${tableName}:`, error);
