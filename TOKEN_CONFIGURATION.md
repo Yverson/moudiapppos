@@ -28,7 +28,7 @@ Le token est chargé dans cet ordre de priorité:
 Depuis le backend MOUDI, effectuez un login:
 
 ```bash
-curl -X POST http://localhost:5084/api/proprietaires/login \
+curl -X POST https://glad-oriented-camel.ngrok-free.app/api/proprietaires/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "owner@restaurant.com",
@@ -315,7 +315,7 @@ if (!result.success && result.message.includes("401")) {
 
 ```env
 # .env.local (développement)
-VITE_API_URL=http://localhost:5084
+VITE_API_URL=https://glad-oriented-camel.ngrok-free.app
 VITE_AUTH_TOKEN=dev_token_from_backend
 VITE_RESTAURANT_ID=rest_1
 ```
@@ -393,7 +393,7 @@ export function LoginComponent() {
 1. Obtenir un nouveau token via login:
 
    ```bash
-   curl -X POST http://localhost:5084/api/proprietaires/login \
+   curl -X POST https://glad-oriented-camel.ngrok-free.app/api/proprietaires/login \
      -d '{"email":"owner@restaurant.com","password":"password"}'
    ```
 

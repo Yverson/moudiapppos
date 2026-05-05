@@ -230,7 +230,7 @@ this.api.interceptors.response.use(
 
 ```
 ┌─────────────────────────────────────────────────┐
-│           MOUDI Backend (http://localhost:5084) │
+│           MOUDI Backend (https://glad-oriented-camel.ngrok-free.app) │
 │  POST /api/proprietaires/login                           │
 │  ├─ Validate email/password                     │
 │  ├─ Return JWT token                            │
@@ -423,7 +423,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiI...
 
 ```bash
 # .env.local
-VITE_API_URL=http://localhost:5084
+VITE_API_URL=https://glad-oriented-camel.ngrok-free.app
 VITE_AUTH_TOKEN=  # Sera défini après login
 ```
 

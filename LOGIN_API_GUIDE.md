@@ -293,7 +293,7 @@ if (result.success) {
 
 ```env
 # .env.local
-VITE_API_URL=http://localhost:5084
+VITE_API_URL=https://glad-oriented-camel.ngrok-free.app
 
 # Ou en production:
 VITE_API_URL=https://api.moudi.com
@@ -443,7 +443,7 @@ console.log("Restaurant Name:", syncService.getRestaurantName());
 ```typescript
 // Dans la console
 import.meta.env.VITE_API_URL;
-// Doit afficher: http://localhost:5084 (ou votre URL en production)
+// Doit afficher: https://glad-oriented-camel.ngrok-free.app (ou votre URL en production)
 ```
 
 ### 4. Consulter les Logs

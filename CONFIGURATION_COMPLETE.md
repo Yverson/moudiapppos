@@ -8,7 +8,7 @@ Votre application est maintenant entièrement configurée avec le restaurant MOU
 
 ```env
 # API Configuration
-VITE_API_URL=http://localhost:5084
+VITE_API_URL=https://glad-oriented-camel.ngrok-free.app
 VITE_APP_NAME=MOUDI'S Marcory
 
 # Authentication
@@ -104,7 +104,7 @@ Pour que la synchronisation fonctionne, vous devez avoir un token JWT valide:
 
 ```bash
 # 1. Obtenir un token valide depuis le backend MOUDI
-curl -X POST http://localhost:5084/api/proprietaires/login \
+curl -X POST https://glad-oriented-camel.ngrok-free.app/api/proprietaires/login \
   -H "Content-Type: application/json" \
   -d '{"email": "owner@restaurant.com", "password": "password"}'
 

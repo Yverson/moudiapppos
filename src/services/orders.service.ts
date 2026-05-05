@@ -73,7 +73,7 @@ class OrdersService {
   private api: ReturnType<typeof axios.create>;
 
   constructor() {
-    this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5084';
+    this.baseURL = import.meta.env.VITE_API_URL || 'https://glad-oriented-camel.ngrok-free.app';
     this.api = axios.create({
       baseURL: this.baseURL,
       timeout: 10000,

@@ -45,7 +45,7 @@ export default function OrdersKanban() {
       try {
         // Récupérer depuis l'API backend
         const token = localStorage.getItem('authToken');
-        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5084'}/api/proprietaire/restaurants/${restaurantId}/livreurs`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://glad-oriented-camel.ngrok-free.app'}/api/proprietaire/restaurants/${restaurantId}/livreurs`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'

@@ -84,7 +84,7 @@ export const DEFAULT_PERMISSIONS: Record<StaffRole, StaffPermissions> = {
 class StaffService {
   async syncFromCloud(restaurantId: string): Promise<void> {
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5084';
+      const baseURL = import.meta.env.VITE_API_URL || 'https://glad-oriented-camel.ngrok-free.app';
       const token = localStorage.getItem('authToken');
 
       const response = await fetch(`${baseURL}/api/restaurants/${restaurantId}/staff`, {

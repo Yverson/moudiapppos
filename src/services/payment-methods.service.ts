@@ -17,7 +17,7 @@ export interface PaymentMethod {
 class PaymentMethodsService {
   private api = {
     get: async (url: string, config?: any) => {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5084';
+      const baseURL = import.meta.env.VITE_API_URL || 'https://glad-oriented-camel.ngrok-free.app';
       const token = localStorage.getItem('authToken');
       const response = await fetch(`${baseURL}${url}`, {
         method: 'GET',
@@ -27,7 +27,7 @@ class PaymentMethodsService {
       return response.json();
     },
     post: async (url: string, data: any) => {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5084';
+      const baseURL = import.meta.env.VITE_API_URL || 'https://glad-oriented-camel.ngrok-free.app';
       const token = localStorage.getItem('authToken');
       const response = await fetch(`${baseURL}${url}`, {
         method: 'POST',
@@ -38,7 +38,7 @@ class PaymentMethodsService {
       return response.json();
     },
     put: async (url: string, data: any) => {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5084';
+      const baseURL = import.meta.env.VITE_API_URL || 'https://glad-oriented-camel.ngrok-free.app';
       const token = localStorage.getItem('authToken');
       const response = await fetch(`${baseURL}${url}`, {
         method: 'PUT',
@@ -49,7 +49,7 @@ class PaymentMethodsService {
       return response.json();
     },
     delete: async (url: string) => {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5084';
+      const baseURL = import.meta.env.VITE_API_URL || 'https://glad-oriented-camel.ngrok-free.app';
       const token = localStorage.getItem('authToken');
       const response = await fetch(`${baseURL}${url}`, {
         method: 'DELETE',

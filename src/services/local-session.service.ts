@@ -55,7 +55,7 @@ export interface CloseSessionRequest {
 
 // --- Configuration API ---
 
-const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5084';
+const baseURL = import.meta.env.VITE_API_URL || 'https://glad-oriented-camel.ngrok-free.app';
 export const api = axios.create({
   baseURL,
   timeout: 10000,

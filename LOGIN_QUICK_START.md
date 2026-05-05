@@ -7,7 +7,7 @@
 Assurez-vous que `.env.local` contient:
 
 ```env
-VITE_API_URL=http://localhost:5084
+VITE_API_URL=https://glad-oriented-camel.ngrok-free.app
 VITE_AUTH_TOKEN=  # Laissez vide, sera défini après login
 
 VITE_RESTAURANT_ID=  # Optional, sera défini après login

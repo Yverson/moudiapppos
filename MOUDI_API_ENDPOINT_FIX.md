@@ -17,7 +17,7 @@ The login implementation was using the incorrect MOUDI API endpoint and field na
 ## Example: Correct CURL Command
 
 ```bash
-curl "https://moudiapi.luxiscloud.com/api/proprietaires/login" ^
+curl "https://glad-oriented-camel.ngrok-free.app/api/proprietaires/login" ^
   -H "Content-Type: application/json" ^
   --data-raw "{\"Email\":\"moudi@food.com\",\"Password\":\"password123\"}"
 ```
@@ -108,7 +108,7 @@ All type checking passes and the application compiles without errors.
 
 ## Important Notes
 
-- The .env.local already has the correct API URL: `https://moudiapi.luxiscloud.com`
+- The .env.local already has the correct API URL: `https://glad-oriented-camel.ngrok-free.app`
 - Token is automatically stored in localStorage and syncService
 - Restaurant ID and name are auto-configured from the login response
 - All API calls will use the Bearer token for authentication
