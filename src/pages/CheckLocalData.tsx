@@ -72,7 +72,6 @@ export default function CheckLocalData() {
       const count = await invoke<number>('get_table_count', { tableName });
       return count;
     } catch (error) {
-      console.error(`Erreur comptage table ${tableName}:`, error);
       return 0;
     }
   };

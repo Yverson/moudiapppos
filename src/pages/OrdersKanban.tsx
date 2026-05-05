@@ -72,13 +72,12 @@ export default function OrdersKanban() {
           setLivreurs(data.filter(l => l.active));
         }
       } catch (err) {
-        console.error('Erreur chargement livreurs:', err);
         // Fallback sur les livreurs locaux
         try {
           const data = await livreurService.getLivreurs(restaurantId, false);
           setLivreurs(data.filter(l => l.active));
         } catch (localErr) {
-          console.error('Erreur chargement livreurs locaux:', localErr);
+          // Ignoré
         }
       }
     };
@@ -181,15 +180,13 @@ export default function OrdersKanban() {
 
   // Assigner un livreur depuis le modal
   const handleAssignLivreurFromModal = useCallback(async (orderId: string, livreurId: string) => {
-    console.log('handleAssignLivreurFromModal appelé:', { orderId, livreurId });
-    
+
     // Trouver le nom du livreur
     const livreur = livreurs.find(l => l.id === livreurId);
     const livreurName = livreur ? `${livreur.prenom} ${livreur.nom}` : undefined;
-    
+
     const result = await assignLivreur(orderId, livreurId, livreurName);
-    console.log('Résultat assignation:', result);
-    
+
     if (!result.success) {
       throw new Error(result.error || 'Erreur lors de l\'assignation du livreur');
     }

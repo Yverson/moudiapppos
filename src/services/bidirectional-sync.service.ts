@@ -132,7 +132,7 @@ class BidirectionalSyncService {
         await this.executeMutation(mutation);
         return;
       } catch (err) {
-        console.warn('[BidirectionalSync] Échec push API — mise en queue:', err);
+        // Ignoré
       }
     }
 
@@ -444,23 +444,15 @@ class BidirectionalSyncService {
     return result;
   }
 
-  // ─── Debug ───────────────────────────────────────────────────────────────
-
-  async debugQueue(): Promise<void> {
-    const items = await tauriInvoke<SyncQueue[]>('get_pending_sync_items', {});
-    console.log('═══ [BidirectionalSync] Queue Debug ═══');
-    console.log('Pending items:', items.length);
-    console.table(items);
-  }
+  // ─── Queue ──────────────────────────────────────────────────────────────
 
   async clearQueue(): Promise<void> {
     try {
       await tauriInvoke('clear_all_sync_queue', {});
       await this.refreshPendingCount();
       this.notifyListeners();
-      console.log('═══ [BidirectionalSync] Queue vidée avec succès');
     } catch (error) {
-      console.error('Erreur lors du vidage de la queue:', error);
+      // Ignoré
     }
   }
 }

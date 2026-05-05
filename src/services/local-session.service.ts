@@ -66,7 +66,6 @@ export const api = axios.create({
  */
 export function setSessionApiBaseUrl(url: string) {
   api.defaults.baseURL = url;
-  console.log(`[LocalSession] URL API mise à jour : ${url}`);
 }
 
 api.interceptors.request.use((config) => {
@@ -136,7 +135,7 @@ export async function createLocalSession(
   try {
     await syncSessionToCloud(session);
   } catch (err) {
-    console.warn('[LocalSession] Échec sync initiale:', err);
+    // Ignorer l'erreur de sync initiale
   }
 
   return session;
@@ -158,7 +157,7 @@ export async function closeLocalSession(
   try {
     await syncCloseSessionToCloud(closed);
   } catch (err) {
-    console.warn('[LocalSession] Échec sync clôture:', err);
+    // Ignorer l'erreur de sync clôture
   }
 
   let newSession: LocalSession | undefined;
@@ -172,7 +171,7 @@ export async function closeLocalSession(
         notes: `Session automatique après clôture de ${closed.id}`,
       });
     } catch (err) {
-      console.warn('[LocalSession] Impossible d\'ouvrir nouvelle session:', err);
+      // Ignorer l'erreur d'ouverture de nouvelle session
     }
   }
 
@@ -279,7 +278,6 @@ export async function syncPendingSessions(): Promise<{ synced: number; errors: n
       }
       synced++;
     } catch (err) {
-      console.error(`[Sync] Échec synchronisation session ${session.id}:`, err);
       errors++;
     }
   }
@@ -294,7 +292,6 @@ export async function syncSessionById(sessionId: string): Promise<boolean> {
   const session = await getLocalSessionById(sessionId);
 
   if (!session) {
-    console.error(`[SyncSession] Session ${sessionId} non trouvée localement`);
     return false;
   }
 
@@ -306,7 +303,6 @@ export async function syncSessionById(sessionId: string): Promise<boolean> {
     }
     return true;
   } catch (err) {
-    console.error(`[SyncSession] Échec synchronisation session ${sessionId}:`, err);
     return false;
   }
 }
@@ -365,7 +361,6 @@ export function formatSessionDate(dateString: string): string {
 export function initSessionSync(): () => void {
   const unsubscribe = bidirectionalSync.subscribe(async (isOnline) => {
     if (isOnline) {
-      console.log('[LocalSession] Connexion rétablie, sync des sessions...');
       await syncPendingSessions();
     }
   });

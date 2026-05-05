@@ -28,7 +28,6 @@ class CategoryService {
     try {
       return await sqliteService.getCategories();
     } catch (error) {
-      console.error("Impossible de charger les catégories depuis la base de données:", error);
       // Initialize with default categories if database is empty
       return this.initializeDefaultCategories();
     }
@@ -154,7 +153,7 @@ class CategoryService {
     try {
       await sqliteService.syncCategories(defaultCategories);
     } catch (error) {
-      console.error("Impossible d'initialiser les catégories par défaut:", error);
+      // Ignoré
     }
 
     return defaultCategories;

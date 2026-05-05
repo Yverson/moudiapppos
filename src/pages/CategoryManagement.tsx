@@ -26,7 +26,6 @@ export default function CategoryManagement() {
       setEditingCategory(null);
       setFormData({ name: '', description: '', color: '#FF6B6B', icon: 'restaurant' });
     } catch (err) {
-      console.error('Failed to save category:', err);
     }
   };
 
@@ -46,7 +45,6 @@ export default function CategoryManagement() {
       try {
         await deleteCategory(id);
       } catch (err) {
-        console.error('Failed to delete category:', err);
       }
     }
   };

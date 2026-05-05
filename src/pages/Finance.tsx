@@ -22,18 +22,14 @@ export default function Finance() {
 
   const fetchCashDrawer = async () => {
     try {
-      console.log('═══ [FINANCE DEBUG] ═══\n', 'Restaurant ID:', restaurantId, '\nDescription: Début du chargement des données financières');
       setLoading(true);
       setError(null);
       const data = await getCashDrawerSummary(restaurantId);
-      console.log('═══ [FINANCE DEBUG] ═══\n', 'Data:', data, '\nDescription: Données reçues du service');
       setCashData(data);
     } catch (err) {
-      console.error('═══ [FINANCE ERROR] ═══\n', 'Error:', err, '\nDescription: Échec du chargement des données financières');
       setError('Impossible de charger les données');
     } finally {
       setLoading(false);
-      console.log('═══ [FINANCE DEBUG] ═══\n', 'Loading:', false, '\nDescription: Fin du chargement');
     }
   };
 
@@ -45,7 +41,6 @@ export default function Finance() {
       setOpeningBalance('0');
       await fetchCashDrawer();
     } catch (err) {
-      console.error('═══ [OPEN SESSION ERROR] ═══\n', 'Error:', err, '\nDescription: Échec de l\'ouverture de la session');
       alert('Erreur lors de l\'ouverture de la session');
     }
   };
@@ -71,7 +66,6 @@ export default function Finance() {
       setTransactionCategory('Divers');
       await fetchCashDrawer();
     } catch (err) {
-      console.error('═══ [TRANSACTION ERROR] ═══\n', 'Error:', err, '\nDescription: Échec de l\'ajout de la transaction');
       alert('Erreur lors de l\'ajout de la transaction');
     }
   };
@@ -106,8 +100,6 @@ export default function Finance() {
   };
 
 
-  console.log('═══ [FINANCE RENDER] ═══\n', 'Loading:', loading, '\nCashData:', cashData, '\nError:', error);
-
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center bg-[#101922] text-white">
@@ -120,7 +112,6 @@ export default function Finance() {
   }
 
   if (!cashData || !cashData.session) {
-    console.log('═══ [FINANCE RENDER] ═══\n', 'Affichage écran ouverture session');
     return (
       <div className="flex-1 flex items-center justify-center bg-[#101922] text-white">
         <div className="text-center max-w-md p-8">

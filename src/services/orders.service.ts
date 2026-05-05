@@ -133,9 +133,6 @@ class OrdersService {
       this.getOnlineOrders(restaurantId, filters).catch(() => []), // Ignore les erreurs online
     ]);
 
-    console.log("localOrders", localOrders);
-    console.log("onlineOrders", onlineOrders);
-    
     // Fusionner et dédupliquer (priorité aux commandes online si synced)
     const ordersMap = new Map<string, Order>();
     
@@ -198,7 +195,6 @@ class OrdersService {
       
       return [];
     } catch (error) {
-      console.error('Erreur récupération commandes online:', error);
       throw error;
     }
   }
@@ -210,7 +206,6 @@ class OrdersService {
     try {
       return await tauriInvoke<Order[]>('get_orders', { restaurantId, status: undefined });
     } catch (error) {
-      console.error('Erreur récupération commandes locales:', error);
       return [];
     }
   }
@@ -243,7 +238,6 @@ class OrdersService {
       // Si pas trouvée localement ou si c'est une commande online, utiliser l'API
       return await this.updateOnlineOrderStatus(orderId, newStatus, restaurantId);
     } catch (error) {
-      console.error('Erreur mise à jour statut commande:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Erreur inconnue' };
     }
   }
@@ -262,7 +256,6 @@ class OrdersService {
       // Si la commande passe à 'delivered' et n'est pas encore payée, la marquer comme payée
       if (newStatus === 'delivered' && order.payment_status !== 'paid') {
         updated.payment_status = 'paid';
-        console.log('Commande locale marquée comme payée automatiquement lors de la livraison');
       }
 
       await tauriInvoke('update_order_offline', { order: updated });
@@ -285,7 +278,6 @@ class OrdersService {
 
       return { success: true };
     } catch (error) {
-      console.error('Erreur mise à jour commande locale:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Erreur inconnue' };
     }
   }
@@ -301,13 +293,11 @@ class OrdersService {
     try {
       // Vérifier la connexion
       if (!navigator.onLine) {
-        console.error('Pas de connexion internet');
         return { success: false, error: 'FAILED: Pas de connexion internet' };
       }
 
       // Mapper le statut AppPOS vers le statut Backend
       const backendStatus = this.mapLocalStatusToBackend(newStatus);
-      console.log('Mise à jour commande online:', { orderId, newStatus, backendStatus });
 
       // Utiliser l'endpoint existant : PATCH /api/proprietaire/orders/{id}/status
       const response = await this.api.patch(
@@ -315,25 +305,20 @@ class OrdersService {
         { Status: backendStatus }
       );
 
-      console.log('Réponse API:', response.data);
-
       if (response.data.success) {
         // Si la commande passe à 'delivered', s'assurer qu'elle est marquée comme payée côté backend
         if (newStatus === 'delivered') {
-          console.log('Commande online marquée comme livrée - le backend doit la marquer comme payée');
         }
         return { success: true };
       }
 
       return { success: false, error: response.data.message || 'Erreur API' };
     } catch (error) {
-      console.error('Erreur mise à jour commande online:', error);
-      
+
       if (axios.isAxiosError(error)) {
         if (!error.response) {
           return { success: false, error: 'FAILED: Impossible de contacter le serveur' };
         }
-        console.error('Erreur API détaillée:', error.response.data);
         return { success: false, error: error.response.data?.message || error.message };
       }
 
@@ -379,7 +364,6 @@ class OrdersService {
           { order: updated }
         );
 
-        console.log('Commande locale mise à jour avec livreur:', { livreurId, livreurName, notes: updatedNotes });
         return { success: true };
       } else {
         // API online - Utiliser l'endpoint PATCH /api/proprietaire/orders/{id}/livreur
@@ -395,7 +379,6 @@ class OrdersService {
         return { success: response.data.success };
       }
     } catch (error) {
-      console.error('Erreur assignation livreur:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Erreur inconnue' };
     }
   }
@@ -519,8 +502,6 @@ class OrdersService {
       price: item.prixUnitaire || item.PrixUnitaire || item.price || 0,
       note: item.instructionsSpeciales || item.InstructionsSpeciales || item.note || ''
     }));
-
-    console.log("apiOrder", apiOrder.source, apiOrder.source != 'local' ? 'online' : 'local');
 
     return {
       id: apiOrder.id || apiOrder.Id,

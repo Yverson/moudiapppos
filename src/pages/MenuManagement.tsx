@@ -47,7 +47,6 @@ export default function MenuManagement() {
         preparation_time: 10,
       });
     } catch (err) {
-      console.error('Failed to save menu item:', err);
     }
   };
 
@@ -72,7 +71,6 @@ export default function MenuManagement() {
       try {
         await deleteMenuItem(id);
       } catch (err) {
-        console.error('Failed to delete menu item:', err);
       }
     }
   };
@@ -81,7 +79,6 @@ export default function MenuManagement() {
     try {
       await toggleMenuItemAvailability(id);
     } catch (err) {
-      console.error('Failed to toggle availability:', err);
     }
   };
 

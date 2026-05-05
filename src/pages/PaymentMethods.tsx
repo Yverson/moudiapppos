@@ -45,7 +45,6 @@ const PaymentMethods: React.FC = () => {
         is_default: false,
       });
     } catch (err) {
-      console.error('Erreur lors de la création:', err);
     }
   };
 
@@ -54,7 +53,6 @@ const PaymentMethods: React.FC = () => {
       try {
         await deletePaymentMethod(id);
       } catch (err) {
-        console.error('Erreur lors de la suppression:', err);
       }
     }
   };
@@ -63,7 +61,6 @@ const PaymentMethods: React.FC = () => {
     try {
       await setDefaultPaymentMethod(id);
     } catch (err) {
-      console.error('Erreur lors de la définition par défaut:', err);
     }
   };
 

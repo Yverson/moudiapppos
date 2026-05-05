@@ -33,7 +33,6 @@ export function CategoryProvider({ children }: { children: ReactNode }) {
         await syncService.syncAll({ categories: true, menuItems: false, customers: false, livreurs: false });
         await refreshCategories();
       } catch (err) {
-        console.warn('[CategoryContext] Auto-sync échouée:', err);
       }
     };
     autoSync();

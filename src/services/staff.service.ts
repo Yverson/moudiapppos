@@ -124,7 +124,6 @@ class StaffService {
         }
       }
     } catch (error) {
-      console.error('[StaffService] Erreur lors de la synchronisation depuis le cloud:', error);
       throw error;
     }
   }
@@ -134,7 +133,7 @@ class StaffService {
       try {
         await this.syncFromCloud(restaurantId);
       } catch (syncError) {
-        console.warn('[StaffService] Sync cloud échouée, données locales:', syncError);
+        // Ignoré
       }
 
       const staff = await tauriInvoke<StaffMember[]>('get_all_staff', { restaurantId });
@@ -143,7 +142,6 @@ class StaffService {
         permissions: this.parsePermissions(member.permissions),
       }));
     } catch (error) {
-      console.error('[StaffService] Erreur récupération staff:', error);
       throw error;
     }
   }
@@ -157,7 +155,6 @@ class StaffService {
         permissions: this.parsePermissions(member.permissions),
       };
     } catch (error) {
-      console.error('[StaffService] Erreur récupération membre:', error);
       throw error;
     }
   }
@@ -216,7 +213,6 @@ class StaffService {
 
       return { ...newMember, permissions: finalPermissions };
     } catch (error) {
-      console.error('[StaffService] Erreur création membre:', error);
       throw error;
     }
   }
@@ -277,7 +273,6 @@ class StaffService {
 
       return { ...updatedMember, permissions: finalPermissions };
     } catch (error) {
-      console.error('[StaffService] Erreur mise à jour membre:', error);
       throw error;
     }
   }
@@ -293,7 +288,6 @@ class StaffService {
         data: { EstActif: false },
       });
     } catch (error) {
-      console.error('[StaffService] Erreur suppression membre:', error);
       throw error;
     }
   }
@@ -322,7 +316,6 @@ class StaffService {
 
       await tauriInvoke('update_staff', { staff: updatedMember });
     } catch (error) {
-      console.error('[StaffService] Erreur mise à jour statut:', error);
       throw error;
     }
   }

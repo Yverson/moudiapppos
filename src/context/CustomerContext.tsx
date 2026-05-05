@@ -33,7 +33,6 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
         const data = await customerService.getCustomers();
         setCustomers(data);
       } catch (err) {
-        console.warn('[CustomerContext] Auto-sync échouée:', err);
       }
     };
     autoSync();

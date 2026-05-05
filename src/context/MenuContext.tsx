@@ -31,7 +31,6 @@ export function MenuProvider({ children }: { children: ReactNode }) {
         const data = await menuService.getMenuItems();
         setMenuItems(data);
       } catch (err) {
-        console.warn('[MenuContext] Auto-sync échouée:', err);
       }
     };
     autoSync();

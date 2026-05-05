@@ -81,8 +81,6 @@ class ReceiptService {
    * TODO: Implement with actual PDF generation
    */
   async exportPDF(receipt: Receipt): Promise<void> {
-    const filename = `receipt-${receipt.orderId}-${Date.now()}.pdf`;
-    console.log('Export PDF prévu sous:', filename);
     // TODO: Implement jsPDF generation
   }
 
@@ -91,8 +89,6 @@ class ReceiptService {
    * TODO: Implement with actual printer communication
    */
   async printThermal(receipt: Receipt): Promise<void> {
-    const receiptText = this.generateThermalReceipt(receipt);
-    console.log('Impression prévue sur imprimante thermique:\n', receiptText);
     // TODO: Implement printer communication via Tauri/Node.js
   }
 

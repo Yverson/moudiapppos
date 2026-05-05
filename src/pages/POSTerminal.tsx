@@ -55,7 +55,6 @@ export default function POSTerminal() {
       const data = await livreurService.getLivreurs(restaurantId, false);
       setLivreurs(data.filter(l => l.active));
     } catch (err) {
-      console.error('Erreur chargement livreurs:', err);
     }
   }, [restaurantId]);
 
@@ -119,7 +118,6 @@ export default function POSTerminal() {
       }, 0);
       return String(maxNum + 1).padStart(3, '0');
     } catch (err) {
-      console.error('Erreur génération numéro de commande:', err);
       // En cas d'erreur, utiliser un timestamp pour garantir l'unicité
       return `T${Date.now().toString().slice(-6)}`;
     }
@@ -343,7 +341,6 @@ export default function POSTerminal() {
         
         setShowPaymentModal(true);
       } catch (error) {
-        console.error('Erreur création commande temporaire:', error);
         alert('Erreur lors de la création de la commande');
       } finally {
         setSaving(false);
@@ -356,11 +353,9 @@ export default function POSTerminal() {
     await refreshDeliveryOrders();
 
     // Synchronisation automatique vers le cloud
-    console.log('POSTERMINAL_SYNC_START', { restaurantId, apiUrl }, 'Appel de la synchronisation automatique depuis POSTerminal');
     try {
       await syncOrders(restaurantId, apiUrl);
     } catch (syncErr) {
-      console.warn('Échec de la synchronisation automatique après enregistrement:', syncErr);
     }
   };
 
@@ -709,7 +704,6 @@ export default function POSTerminal() {
               try {
                 await syncOrders(restaurantId, apiUrl);
               } catch (syncErr) {
-                console.warn('Échec de la synchronisation supplémentaire après paiement:', syncErr);
               }
             }}
           />

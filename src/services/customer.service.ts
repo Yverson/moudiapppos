@@ -57,7 +57,6 @@ class CustomerService {
         this.convertFromSQLite(customer),
       );
     } catch (error) {
-      console.error("Impossible de charger les clients depuis la base de données:", error);
       // Initialize with default customers if database is empty
       return this.initializeDefaultCustomers();
     }
@@ -281,7 +280,7 @@ class CustomerService {
       );
       await sqliteService.syncCustomers(sqliteCustomers);
     } catch (error) {
-      console.error("Impossible d'initialiser les clients par défaut:", error);
+      // Ignoré
     }
 
     return defaultCustomers;

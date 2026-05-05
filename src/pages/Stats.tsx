@@ -24,7 +24,6 @@ export default function Stats() {
       setOnlineStats(result.online);
       setCombinedStats(result.combined);
     } catch (error) {
-      console.error('Erreur chargement stats:', error);
     } finally {
       setLoading(false);
     }

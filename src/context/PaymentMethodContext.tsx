@@ -42,7 +42,6 @@ export const PaymentMethodProvider: React.FC<PaymentMethodProviderProps> = ({ ch
       setPaymentMethods(methods);
     } catch (err) {
       setError('Erreur lors du chargement des moyens de paiement');
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -167,7 +166,6 @@ export const PaymentMethodProvider: React.FC<PaymentMethodProviderProps> = ({ ch
       await refreshPaymentMethods();
     } catch (err) {
       setError('Erreur lors de la synchronisation');
-      console.error(err);
     } finally {
       setLoading(false);
     }

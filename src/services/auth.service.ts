@@ -89,18 +89,12 @@ class AuthService {
         Password: credentials.password,
       });
 
-      console.log("[AuthService] API Response (full):", response.data);
-
       if (response.data.success) {
         const { accessToken, proprietaire, user } = response.data.data;
 
         // Store token
         localStorage.setItem("authToken", accessToken);
         syncService.setAuthToken(accessToken);
-
-        console.log(
-          "[AuthService] Token d'authentification obtenu et configuré"
-        );
 
         // Configure restaurant info from the runtime selection first.
         const restaurantId = proprietaire?.restaurantId || getActiveRestaurantId();
@@ -114,20 +108,13 @@ class AuthService {
           syncService.setRestaurantId(restaurantId);
           syncService.setRestaurantName(restaurantName);
           setActiveRestaurant({ id: restaurantId, name: restaurantName });
-
-          console.log(
-            `[AuthService] Restaurant configuré: ${restaurantName} (${restaurantId})`
-          );
         } else {
-          console.warn(
-            "[AuthService] VITE_RESTAURANT_ID non configuré dans .env.local"
-          );
+          // VITE_RESTAURANT_ID non configure
         }
 
         // Return user object
         // API returns proprietaire data, not a separate user object
         if (!proprietaire) {
-          console.warn("[AuthService] No proprietaire data in response");
           return null;
         }
 
@@ -141,14 +128,9 @@ class AuthService {
           restaurantName: proprietaire.restaurantName,
         };
       } else {
-        console.warn(
-          "[AuthService] API returned success=false",
-          response.data
-        );
         return null;
       }
     } catch (error) {
-      console.error("[AuthService] Erreur de connexion:", error);
       throw error;
     }
   }
@@ -161,8 +143,6 @@ class AuthService {
     localStorage.removeItem("restaurantId");
     localStorage.removeItem("restaurantName");
     syncService.clearAuthToken();
-
-    console.log("[AuthService] Déconnexion réussie");
   }
 
   /**
@@ -190,7 +170,6 @@ class AuthService {
       const response = await this.api.get("/api/auth/verify");
       return response.status === 200;
     } catch (error) {
-      console.warn("[AuthService] Token verification failed:", error);
       return false;
     }
   }
@@ -207,16 +186,11 @@ class AuthService {
         localStorage.setItem("authToken", accessToken);
         syncService.setAuthToken(accessToken);
 
-        console.log("[AuthService] Token rafraîchi avec succès");
         return true;
       }
 
       return false;
     } catch (error) {
-      console.error(
-        "[AuthService] Erreur de rafraîchissement du token:",
-        error,
-      );
       return false;
     }
   }

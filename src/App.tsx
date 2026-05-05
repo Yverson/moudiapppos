@@ -45,11 +45,9 @@ export default function App() {
         
         // Synchroniser les commandes locales vers le cloud
         try {
-          console.log('[App] Démarrage de la synchronisation automatique des commandes...');
           await syncService.syncAll({ orders: true });
-          console.log('[App] Synchronisation des commandes terminée');
         } catch (error) {
-          console.error('[App] Erreur lors de la synchronisation automatique:', error);
+          // Ignoré
         }
       }
     };

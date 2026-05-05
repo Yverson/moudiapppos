@@ -49,7 +49,6 @@ class MenuService {
         .map((item) => this.convertFromSQLite(item))
         .sort((a, b) => a.order - b.order);
     } catch (error) {
-      console.error("Impossible de charger les articles du menu depuis la base de données:", error);
       // Initialize with default menu items if database is empty
       return this.initializeDefaultMenuItems();
     }
@@ -278,7 +277,7 @@ class MenuService {
       );
       await sqliteService.syncMenuItems(sqliteItems);
     } catch (error) {
-      console.error("Impossible d'initialiser les articles du menu par défaut:", error);
+      // Ignoré
     }
 
     return defaultItems;

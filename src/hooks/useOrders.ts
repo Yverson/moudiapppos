@@ -54,23 +54,12 @@ export function useOrders(
       
       const fetchedOrders = await ordersService.getAllOrders(restaurantId, parsedFilters);
       setOrders(fetchedOrders);
-      console.log("fetchedOrders", fetchedOrders);
-
       // Calculer les statistiques
       const calculatedStats = ordersService.calculateStats(fetchedOrders);
       setStats(calculatedStats);
-
-      if (!isInitialMount.current) {
-        console.log(
-          '═══ [ORDERS LOADED] ═══\n',
-          'Count:', fetchedOrders.length,
-          '\nFilters:', parsedFilters
-        );
-      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erreur lors du chargement des commandes';
       setError(errorMessage);
-      console.error('Erreur chargement commandes:', err);
     } finally {
       setLoading(false);
       isInitialMount.current = false;
@@ -133,11 +122,6 @@ export function useOrders(
     if (!autoRefresh || !isOnline) return;
 
     const interval = setInterval(() => {
-      console.log(
-        '═══ [AUTO-REFRESH] ═══\n',
-        'Interval:', refreshInterval,
-        '\nOnline:', isOnline
-      );
       loadOrders();
     }, refreshInterval);
 

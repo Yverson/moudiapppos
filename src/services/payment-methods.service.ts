@@ -64,7 +64,6 @@ class PaymentMethodsService {
     try {
       return await tauriInvoke<PaymentMethod[]>('get_payment_methods', { userId });
     } catch (error) {
-      console.error('[PaymentMethods] Erreur récupération:', error);
       return [];
     }
   }
@@ -91,7 +90,7 @@ class PaymentMethodsService {
         await this.upsertLocal(localPM);
       }
     } catch (error) {
-      console.error('[PaymentMethods] Erreur synchronisation cloud:', error);
+      // Ignoré
     }
   }
 

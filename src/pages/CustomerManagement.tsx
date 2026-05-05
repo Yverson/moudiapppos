@@ -62,7 +62,6 @@ export default function CustomerManagement() {
         notes: '',
       });
     } catch (err) {
-      console.error('Failed to save customer:', err);
     }
   };
 
@@ -94,7 +93,6 @@ export default function CustomerManagement() {
       try {
         await deleteCustomer(id);
       } catch (err) {
-        console.error('Failed to delete customer:', err);
       }
     }
   };
@@ -107,7 +105,6 @@ export default function CustomerManagement() {
         setSearchResults(results);
         setShowSearchResults(true);
       } catch (err) {
-        console.error('Search failed:', err);
       }
     } else {
       setShowSearchResults(false);

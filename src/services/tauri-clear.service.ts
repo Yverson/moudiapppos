@@ -12,7 +12,6 @@ export class TauriClearService {
       const result = await invoke<number>('clear_orders', { restaurantId });
       return result;
     } catch (error) {
-      console.error('[TauriClear] Erreur vidage commandes:', error);
       throw error;
     }
   }
@@ -25,7 +24,6 @@ export class TauriClearService {
       const result = await invoke<number>('clear_all_orders');
       return result;
     } catch (error) {
-      console.error('[TauriClear] Erreur vidage toutes commandes:', error);
       throw error;
     }
   }
@@ -46,9 +44,7 @@ export class TauriClearService {
       try {
         const result = await invoke<number>(`clear_${table}`);
         results[table] = result;
-        console.log(`[TauriClear] Table ${table} vidée: ${result} enregistrements`);
       } catch (error) {
-        console.error(`[TauriClear] Erreur vidage table ${table}:`, error);
         results[table] = 0;
       }
     }

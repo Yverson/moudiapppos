@@ -105,7 +105,6 @@ export default function LocalDbManagement() {
       }
       setTableData(data);
     } catch (error) {
-      console.error('Erreur lors du chargement des données:', error);
     } finally {
       setIsLoading(false);
     }
@@ -164,7 +163,6 @@ export default function LocalDbManagement() {
       }
       await loadTableData();
     } catch (error) {
-      console.error('Erreur lors de la suppression:', error);
       alert('Erreur lors de la suppression');
     }
   };
@@ -240,7 +238,6 @@ export default function LocalDbManagement() {
       setShowModal(false);
       await loadTableData();
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde:', error);
       alert('Erreur lors de la sauvegarde');
     }
   };

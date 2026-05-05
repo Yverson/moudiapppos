@@ -20,18 +20,13 @@ export default function Roles() {
   const loadStaff = async () => {
     try {
       setIsLoading(true);
-      console.log('[Roles] Chargement du staff pour restaurantId:', restaurantId);
       const data = await staffService.getAllStaff(restaurantId);
-      console.log('[Roles] Staff récupéré:', data.length, 'membres');
-      console.log('[Roles] Données:', data);
       setStaff(data);
       if (data.length > 0 && !selectedUser) {
         setSelectedUser(data[0]);
       } else if (data.length === 0) {
-        console.warn('[Roles] Aucun membre du staff trouvé');
       }
     } catch (err) {
-      console.error('[Roles] Erreur lors du chargement du staff:', err);
       setError('Impossible de charger les utilisateurs');
     } finally {
       setIsLoading(false);
@@ -51,7 +46,6 @@ export default function Roles() {
       setSelectedUser(newMember);
       setShowAddModal(false);
     } catch (err) {
-      console.error('Erreur lors de la création:', err);
       alert('Erreur lors de la création de l\'utilisateur');
     }
   };
@@ -63,7 +57,6 @@ export default function Roles() {
       setStaff(staff.map(s => s.id === updated.id ? updated : s));
       setSelectedUser(updated);
     } catch (err) {
-      console.error('Erreur lors de la mise à jour du rôle:', err);
     }
   };
 
@@ -76,7 +69,6 @@ export default function Roles() {
       setStaff(staff.map(s => s.id === updated.id ? updated : s));
       setSelectedUser(updated);
     } catch (err) {
-      console.error('Erreur lors de la mise à jour des permissions:', err);
     }
   };
 
@@ -86,7 +78,6 @@ export default function Roles() {
       await staffService.deleteStaff(id);
       await loadStaff();
     } catch (err) {
-      console.error('Erreur lors de la suppression:', err);
     }
   };
 

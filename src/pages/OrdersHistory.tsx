@@ -43,7 +43,6 @@ export default function OrdersHistory() {
         setLivreurs(response.data.data);
       }
     } catch (error) {
-      console.error('Erreur chargement livreurs:', error);
     }
   }, []);
 

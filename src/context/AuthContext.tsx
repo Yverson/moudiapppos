@@ -46,7 +46,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (userData) {
         setUser(userData);
         localStorage.setItem("apppos_user", JSON.stringify(userData));
-        console.log("[AuthContext] Connexion réussie:", userData.email);
         return { success: true };
       }
 
@@ -55,7 +54,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error: "Email ou mot de passe incorrect",
       };
     } catch (error: any) {
-      console.error("[AuthContext] Erreur de connexion:", error);
 
       let errorMessage = "Erreur de connexion. Veuillez réessayer.";
 
@@ -85,7 +83,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     localStorage.removeItem("apppos_user");
     authService.logout();
-    console.log("[AuthContext] Déconnexion réussie");
   };
 
   return (

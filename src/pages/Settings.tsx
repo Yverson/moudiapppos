@@ -91,7 +91,7 @@ export default function Settings() {
       title="Paramètres généraux"
       description="Gérer les informations de l'établissement, la marque et les reçus."
       showSaveButton={true}
-      onSave={() => console.log('Save configuration')}
+      onSave={() => {}}
     >
       <div className="space-y-8">
         <section className="max-w-4xl mx-auto">

@@ -133,10 +133,8 @@ export default function PaymentModal({
         const openSession = await getOpenLocalSession(restaurantId);
         if (openSession) {
           setSessionId(openSession.id);
-          console.log('[PaymentModal] Session détectée:', openSession.id);
         }
       } catch (err) {
-        console.warn('[PaymentModal] Erreur récupération session:', err);
       }
     };
 
@@ -334,11 +332,9 @@ export default function PaymentModal({
         }
 
         // Synchronisation automatique vers le cloud
-        console.log('PAYMENT_MODAL_SYNC_START', { restaurantId, apiUrl }, 'Appel de la synchronisation automatique depuis PaymentModal');
         try {
           await syncOrders(restaurantId, apiUrl);
         } catch (syncErr) {
-          console.warn('Échec de la synchronisation automatique après paiement:', syncErr);
         }
 
         // Close modal after 2 seconds

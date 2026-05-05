@@ -54,12 +54,9 @@ export default function OrderDetailsModal({
     
     setUpdating(true);
     try {
-      console.log('Mise à jour statut:', { orderId: order.id, currentStatus: order.status, newStatus, isLocal });
       await onUpdateStatus(order.id, newStatus);
-      console.log('Statut mis à jour avec succès');
       onClose();
     } catch (error) {
-      console.error('Erreur mise à jour statut:', error);
       alert(`Erreur lors de la mise à jour du statut: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
     } finally {
       setUpdating(false);
@@ -72,12 +69,9 @@ export default function OrderDetailsModal({
     
     setUpdating(true);
     try {
-      console.log('Assignation livreur:', { orderId: order.id, livreurId });
       await onAssignLivreur(order.id, livreurId);
-      console.log('Livreur assigné avec succès');
       // Ne pas fermer le modal - laisser l'utilisateur voir le changement
     } catch (error) {
-      console.error('Erreur assignation livreur:', error);
       alert(`Erreur lors de l'assignation du livreur: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
     } finally {
       setUpdating(false);

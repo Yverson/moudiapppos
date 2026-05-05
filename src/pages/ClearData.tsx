@@ -114,7 +114,6 @@ export default function ClearData() {
       }
 
     } catch (error) {
-      console.error('[ClearData] Erreur lors de la suppression:', error);
       throw error;
     }
   };
@@ -150,7 +149,6 @@ export default function ClearData() {
         alert("Données effacées avec succès. L'application va recharger.");
         window.location.reload();
       } catch (error) {
-        console.error('Erreur lors de la suppression:', error);
         alert("Erreur lors de la suppression des données.");
       } finally {
         setLoadingLocal(false);
@@ -210,7 +208,6 @@ export default function ClearData() {
           alert(`Les données ont été effacées pour le restaurant "${restaurantName}" : ${tableList}`);
           setSelectedCloudTables(new Set());
         } catch (error) {
-          console.error('Erreur lors de la suppression Cloud:', error);
           alert(`Erreur: ${error instanceof Error ? error.message : 'Erreur lors de la suppression'}`);
         } finally {
           setLoadingCloud(false);

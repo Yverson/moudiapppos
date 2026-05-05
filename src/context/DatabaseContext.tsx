@@ -83,7 +83,6 @@ export function DatabaseProvider({ children, restaurantId }: DatabaseProviderPro
       setIsConnected(true);
       setConnectionError(null);
     } catch (error) {
-      console.error('[DatabaseContext] Erreur de connexion SQLite:', error);
       setIsConnected(false);
       setConnectionError(error instanceof Error ? error.message : 'Erreur de connexion à la base de données');
     } finally {

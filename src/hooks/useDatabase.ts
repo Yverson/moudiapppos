@@ -149,8 +149,6 @@ export function useSyncOrders() {
   const syncOrders = async (restaurantId: string, apiUrl: string) => {
     setIsSyncing(true);
     setError(null);
-    console.log('SYNC_ORDERS_TRIGGERED', { restaurantId, apiUrl }, 'Déclenchement de la synchronisation des commandes');
-    
     try {
       const syncService = (await import('../services/sync.service')).default;
       

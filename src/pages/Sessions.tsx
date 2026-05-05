@@ -121,7 +121,6 @@ export default function Sessions() {
       setSessions(sessions);
     } catch (err) {
       setError('Erreur lors du chargement des sessions');
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -142,7 +141,6 @@ export default function Sessions() {
       }
     } catch (err) {
       setError('Erreur lors du chargement du rapport');
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -162,7 +160,6 @@ export default function Sessions() {
       }
     } catch (err) {
       setError('Erreur lors de la clÃ´ture de la session');
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -219,15 +216,12 @@ export default function Sessions() {
       await loadSessions();
 
       // Synchronisation automatique vers le cloud
-      console.log('SESSIONS_SYNC_START', { activeRestaurantId, apiUrl }, 'Appel de la synchronisation automatique après ouverture de session');
       try {
         await syncOrders(activeRestaurantId || '', apiUrl);
       } catch (syncErr) {
-        console.warn('Échec de la synchronisation automatique après création de session:', syncErr);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de la crÃ©ation');
-      console.error(err);
     } finally {
       setLoading(false);
     }

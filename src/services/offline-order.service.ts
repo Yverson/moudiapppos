@@ -85,7 +85,6 @@ class OfflineOrderService {
   }
 
   async syncPendingOrders(restaurantId: string, apiUrl: string): Promise<SyncResult> {
-    console.log('OFFLINE_ORDER_SYNC', { restaurantId, apiUrl }, 'Appel de syncPendingOrders');
     return await tauriInvoke<SyncResult>('sync_pending_orders', { restaurantId, apiUrl });
   }
 
@@ -113,7 +112,7 @@ class OfflineOrderService {
         sessionId = openSession.id;
       }
     } catch (err) {
-      console.warn('[OfflineOrderService] Impossible de récupérer la session ouverte:', err);
+      // Ignoré
     }
 
     return {

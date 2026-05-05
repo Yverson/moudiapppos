@@ -32,7 +32,6 @@ export default function SyncSettings() {
       setSyncStatus(status);
       setLocalCount(count);
     } catch (error) {
-      console.error('Erreur lors du chargement des données de synchronisation:', error);
     }
   };
 

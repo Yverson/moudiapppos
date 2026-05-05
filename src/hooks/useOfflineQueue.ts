@@ -44,7 +44,6 @@ export function useOfflineQueue(): UseOfflineQueueReturn {
         setQueue(JSON.parse(stored));
       }
     } catch (err) {
-      console.error('Failed to load offline queue:', err);
     }
   }, []);
 
@@ -74,29 +73,21 @@ export function useOfflineQueue(): UseOfflineQueueReturn {
         switch (item.action) {
           case 'CREATE_ORDER':
             await apiService.createOrder(item.payload);
-            console.log('✅ Synced order:', item.id);
             break;
 
           case 'UPDATE_ORDER':
             await apiService.updateOrderStatus(item.payload.orderId, item.payload.status);
-            console.log('✅ Synced order update:', item.id);
             break;
 
           case 'PROCESS_PAYMENT':
             await apiService.processPayment(item.payload);
-            console.log('✅ Synced payment:', item.id);
             break;
 
           default:
-            console.warn('Unknown action type:', item.action);
         }
       } catch (err) {
-        console.error('❌ Failed to sync item:', item.id, err);
-        
         if (item.retries < 3) {
           failedItems.push({ ...item, retries: item.retries + 1 });
-        } else {
-          console.error('⚠️ Max retries reached for item:', item.id);
         }
       }
     }
