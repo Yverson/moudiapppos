@@ -1,5 +1,6 @@
 import { Order } from './api.service';
 import { formatAmount } from '../utils/format';
+import { tauriInvoke } from './platform';
 
 export interface Receipt {
   orderId: string;
@@ -17,63 +18,73 @@ export interface Receipt {
 }
 
 class ReceiptService {
+  private readonly lineWidth = 44; // 80mm paper
+
   /**
-   * Generate receipt text for thermal printer (58mm paper)
+   * Generate receipt text for thermal printer (80mm paper)
    */
   generateThermalReceipt(receipt: Receipt): string {
     const lines: string[] = [];
-    const lineWidth = 42; // 58mm / ~1.4mm per char
+    const W = this.lineWidth;
+    const pw = 9;              // price column width
+    const qw = 3;              // quantity column width
+    const inner = W - 2;       // content width between borders (42)
+    const nw = inner - qw - pw - 2; // name column (28)
 
-    // Header
-    lines.push('='.repeat(lineWidth));
-    lines.push(this.centerText('MOUDI POS', lineWidth));
-    lines.push('='.repeat(lineWidth));
+    // Helpers
+    const sep = (c: string) => `+${c.repeat(inner)}+`;
+    const line = (s: string) => `|${s}${' '.repeat(Math.max(0, inner - s.length))}|`;
+    const colLine = (name: string, qty: string, price: string) =>
+      `|${name.padEnd(nw)} ${qty.padStart(qw)} ${price.padStart(pw)}|`;
+    const totalLine = (label: string, amount: number) => {
+      const price = formatAmount(amount).padStart(pw);
+      return line(` ${label}${' '.repeat(inner - label.length - 1 - pw)}${price}`);
+    };
+    const centerLine = (text: string) => {
+      const pad = Math.max(0, Math.floor((inner - text.length) / 2));
+      return `|${' '.repeat(pad)}${text}${' '.repeat(inner - text.length - pad)}|`;
+    };
 
-    // Order info
-    lines.push(`Order: ${receipt.orderId}`);
-    lines.push(`Date: ${receipt.timestamp.toLocaleString()}`);
+    // ── Header ──
+    lines.push(sep('='));
+    lines.push(line(''));
+    lines.push(centerLine('MOUDI POS'));
+    lines.push(line(''));
+    lines.push(sep('-'));
+
+    // ── Order info ──
+    lines.push(line(` Commande: ${receipt.orderId}`));
+    lines.push(line(` Date:     ${receipt.timestamp.toLocaleString()}`));
     if (receipt.customerName) {
-      lines.push(`Customer: ${receipt.customerName}`);
+      lines.push(line(` Client:   ${receipt.customerName}`));
     }
-    lines.push('-'.repeat(lineWidth));
+    lines.push(sep('-'));
 
-    // Items
-    lines.push('Article'.padEnd(30) + 'Qté'.padStart(4) + 'Prix'.padStart(7));
-    lines.push('-'.repeat(lineWidth));
+    // ── Items ──
+    lines.push(colLine('Article', 'Qte', 'Total'));
+    lines.push(colLine('-'.repeat(nw), '-'.repeat(qw), '-'.repeat(pw)));
     receipt.items.forEach((item) => {
-      const name = item.name.substring(0, 30).padEnd(30);
-      const qty = String(item.quantity).padStart(4);
-      const price = formatAmount(item.price * item.quantity).padStart(7);
-      lines.push(name + qty + price);
+      const name = item.name.substring(0, nw);
+      const total = formatAmount(item.price * item.quantity);
+      lines.push(colLine(name, String(item.quantity), total));
     });
 
-    // Totals
-    lines.push('-'.repeat(lineWidth));
-    lines.push(
-      'Sous-total'.padEnd(35) + formatAmount(receipt.subtotal).padStart(6)
-    );
-    lines.push('Taxe (20%)'.padEnd(35) + formatAmount(receipt.tax).padStart(6));
-    lines.push('='.repeat(lineWidth));
-    lines.push(
-      'TOTAL'.padEnd(35) + formatAmount(receipt.total).padStart(6)
-    );
-    lines.push('='.repeat(lineWidth));
+    // ── Totals ──
+    lines.push(colLine('-'.repeat(nw), '-'.repeat(qw), '-'.repeat(pw)));
+    lines.push(totalLine('Sous-total', receipt.subtotal));
+    lines.push(totalLine('Taxe (20%)', receipt.tax));
+    lines.push(sep('='));
+    lines.push(totalLine('TOTAL', receipt.total));
+    lines.push(sep('='));
 
-    // Payment
-    lines.push(`Payment: ${receipt.paymentMethod}`);
-    lines.push('');
-    lines.push(this.centerText('Thank you!', lineWidth));
-    lines.push('');
+    // ── Payment & footer ──
+    lines.push(line(` ${receipt.paymentMethod}`));
+    lines.push(line(''));
+    lines.push(centerLine('Merci de votre visite!'));
+    lines.push(line(''));
+    lines.push(sep('='));
 
     return lines.join('\n');
-  }
-
-  /**
-   * Center text for thermal printer
-   */
-  private centerText(text: string, width: number): string {
-    const padding = Math.max(0, Math.floor((width - text.length) / 2));
-    return ' '.repeat(padding) + text;
   }
 
   /**
@@ -89,7 +100,8 @@ class ReceiptService {
    * TODO: Implement with actual printer communication
    */
   async printThermal(receipt: Receipt): Promise<void> {
-    // TODO: Implement printer communication via Tauri/Node.js
+    const text = this.generateThermalReceipt(receipt);
+    await tauriInvoke('print_receipt', { content: text });
   }
 
   /**
@@ -98,7 +110,7 @@ class ReceiptService {
   generateFromOrder(
     order: Order,
     customerName?: string,
-    paymentMethod = 'Espèces'
+    paymentMethod = 'Especes'
   ): Receipt {
     return {
       orderId: order.order_number,

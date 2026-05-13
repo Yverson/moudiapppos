@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod database;
+mod printer;
 
 use database::Database;
 use std::sync::Arc;
@@ -74,6 +75,7 @@ async fn main() {
             database::delete_sync_queue_item,
             database::update_sync_queue_item_status,
             database::clear_all_sync_queue,
+            printer::print_receipt,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

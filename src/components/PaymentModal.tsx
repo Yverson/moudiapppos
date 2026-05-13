@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { tauriInvoke } from '../services/platform';
 import { useSyncOrders } from '../hooks/useDatabase';
 import { formatAmount } from '../utils/format';
@@ -99,6 +99,7 @@ export default function PaymentModal({
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [splitPayments, setSplitPayments] = useState<Array<{ method: PaymentMethod; amount: string }>>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const isProcessing = useRef(false);
 
   const { id: restaurantId } = useActiveRestaurant();
   const loading = loadingAction !== null;
@@ -191,6 +192,8 @@ export default function PaymentModal({
    * Process payment through API
    */
   const handlePayment = async (action: PaymentAction = 'complete') => {
+    if (isProcessing.current) return;
+    isProcessing.current = true;
     const useEnteredPayment = action === 'complete' || canProceed;
     const effectiveMethod = useEnteredPayment ? selectedMethod : PaymentMethod.CASH;
     const effectiveTendered = useEnteredPayment ? tendered : total;
@@ -354,6 +357,7 @@ export default function PaymentModal({
       });
     } finally {
       setLoadingAction(null);
+      isProcessing.current = false;
     }
   };
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import PaymentModal from '../components/PaymentModal';
 import { useCategories, useMenuItems, useOrders, useSyncOrders } from '../hooks/useDatabase';
+import receiptService from '../services/receipt.service';
 import offlineOrderService, { Order as OfflineOrder } from '../services/offline-order.service';
 import livreurService, { Livreur } from '../services/livreur.service';
 import { formatAmount } from '../utils/format';
@@ -696,7 +697,23 @@ export default function POSTerminal() {
             onClose={() => setShowPaymentModal(false)}
             total={total}
             orderId={currentOrderId || 'order-unknown'}
-            onPaymentSuccess={async () => {
+            onPaymentSuccess={async (data: any) => {
+              // Imprimer la facture avant de réinitialiser le state
+              receiptService.printThermal({
+                orderId: currentOrderId || '',
+                customerName: customerName || undefined,
+                items: orderItems.map(item => ({
+                  name: item.name,
+                  quantity: item.quantity,
+                  price: item.price,
+                })),
+                subtotal: total,
+                tax: 0,
+                total,
+                paymentMethod: data?.payment_method || 'Especes',
+                timestamp: new Date(),
+              }).catch(() => {});
+
               await startNewOrder();
               await refreshAllOrders();
               // Note: PaymentModal lance déjà sa propre synchronisation
